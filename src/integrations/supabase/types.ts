@@ -587,6 +587,8 @@ export type Database = {
         | "job_amended"
         | "dispatch_recommendation_ready"
         | "driver_offer_prepared"
+        | "driver_arrived"
+        | "vehicle_loaded"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -738,6 +740,8 @@ export const Constants = {
         "job_amended",
         "dispatch_recommendation_ready",
         "driver_offer_prepared",
+        "driver_arrived",
+        "vehicle_loaded",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
