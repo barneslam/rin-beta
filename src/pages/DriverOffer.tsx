@@ -60,7 +60,15 @@ const DriverOffer = () => {
       });
       return result;
     };
-  }, [drivers, trucks, incidentTypes, truckTypesData, autoDispatch, job.job_id]);
+  }, [drivers, trucks, incidentTypes, truckTypesData, autoDispatch, job]);
+
+  if (!job) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">No active job. Start from Incident Intake.</p>
+      </div>
+    );
+  }
 
   const handleAccept = (offer: { offer_id: string; driver_id: string; truck_id: string | null; job_id: string }) => {
     acceptOffer.mutate(
