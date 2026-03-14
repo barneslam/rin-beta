@@ -152,11 +152,36 @@ const IncidentValidation = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Location</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-3 text-sm">
             <p><span className="text-muted-foreground">Address:</span> {job.pickup_location || "—"}</p>
-            <p className="font-mono text-xs">
-              <span className="text-muted-foreground">GPS:</span> {job.gps_lat}, {job.gps_long}
-            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">GPS Latitude</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  defaultValue={job.gps_lat ?? ""}
+                  placeholder="e.g. 43.6532"
+                  onBlur={(e) => {
+                    const val = e.target.value ? parseFloat(e.target.value) : null;
+                    updateJob.mutate({ jobId: job.job_id, updates: { gps_lat: val }, eventSource: "validation_screen" });
+                  }}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">GPS Longitude</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  defaultValue={job.gps_long ?? ""}
+                  placeholder="e.g. -79.3832"
+                  onBlur={(e) => {
+                    const val = e.target.value ? parseFloat(e.target.value) : null;
+                    updateJob.mutate({ jobId: job.job_id, updates: { gps_long: val }, eventSource: "validation_screen" });
+                  }}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
