@@ -214,13 +214,71 @@ export type Database = {
           },
         ]
       }
+      job_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string | null
+          created_at: string
+          event_category: string
+          event_id: string
+          event_status: string | null
+          event_type: string
+          job_id: string
+          message: string | null
+          new_value: Json | null
+          old_value: Json | null
+          reason: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type?: string | null
+          created_at?: string
+          event_category: string
+          event_id?: string
+          event_status?: string | null
+          event_type: string
+          job_id: string
+          message?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string | null
+          created_at?: string
+          event_category?: string
+          event_id?: string
+          event_status?: string | null
+          event_type?: string
+          job_id?: string
+          message?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["job_id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
+          amendment_reason: string | null
           assigned_driver_id: string | null
           assigned_truck_id: string | null
           authorization_status: string | null
           can_vehicle_roll: boolean | null
+          cancellation_fee: number | null
+          cancelled_by: string | null
+          cancelled_reason: string | null
           created_at: string
+          customer_update_message: string | null
           dispatch_attempt_count: number
           dispatch_priority_score: number | null
           estimated_price: number | null
@@ -232,6 +290,7 @@ export type Database = {
           job_status: Database["public"]["Enums"]["job_status"]
           location_type: string | null
           pickup_location: string | null
+          reassignment_reason: string | null
           required_equipment: Json | null
           required_truck_type_id: string | null
           updated_at: string
@@ -242,11 +301,16 @@ export type Database = {
           vehicle_year: number | null
         }
         Insert: {
+          amendment_reason?: string | null
           assigned_driver_id?: string | null
           assigned_truck_id?: string | null
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
+          cancellation_fee?: number | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
           created_at?: string
+          customer_update_message?: string | null
           dispatch_attempt_count?: number
           dispatch_priority_score?: number | null
           estimated_price?: number | null
@@ -258,6 +322,7 @@ export type Database = {
           job_status?: Database["public"]["Enums"]["job_status"]
           location_type?: string | null
           pickup_location?: string | null
+          reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
           updated_at?: string
@@ -268,11 +333,16 @@ export type Database = {
           vehicle_year?: number | null
         }
         Update: {
+          amendment_reason?: string | null
           assigned_driver_id?: string | null
           assigned_truck_id?: string | null
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
+          cancellation_fee?: number | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
           created_at?: string
+          customer_update_message?: string | null
           dispatch_attempt_count?: number
           dispatch_priority_score?: number | null
           estimated_price?: number | null
@@ -284,6 +354,7 @@ export type Database = {
           job_status?: Database["public"]["Enums"]["job_status"]
           location_type?: string | null
           pickup_location?: string | null
+          reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
           updated_at?: string
@@ -574,6 +645,11 @@ export type Database = {
         | "offer_sent"
         | "offer_responded"
         | "system_event"
+        | "amendment_requested"
+        | "reassignment_requested"
+        | "driver_unavailable"
+        | "job_cancelled"
+        | "customer_update"
       driver_availability: "available" | "busy" | "offline"
       job_status:
         | "intake_started"
@@ -589,6 +665,11 @@ export type Database = {
         | "driver_offer_prepared"
         | "driver_arrived"
         | "vehicle_loaded"
+        | "customer_reapproval_pending"
+        | "reassignment_required"
+        | "driver_unavailable"
+        | "cancelled_by_customer"
+        | "cancelled_after_dispatch"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -726,6 +807,11 @@ export const Constants = {
         "offer_sent",
         "offer_responded",
         "system_event",
+        "amendment_requested",
+        "reassignment_requested",
+        "driver_unavailable",
+        "job_cancelled",
+        "customer_update",
       ],
       driver_availability: ["available", "busy", "offline"],
       job_status: [
@@ -742,6 +828,11 @@ export const Constants = {
         "driver_offer_prepared",
         "driver_arrived",
         "vehicle_loaded",
+        "customer_reapproval_pending",
+        "reassignment_required",
+        "driver_unavailable",
+        "cancelled_by_customer",
+        "cancelled_after_dispatch",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
