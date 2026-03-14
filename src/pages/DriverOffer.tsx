@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,9 @@ const DriverOffer = () => {
   const autoDispatch = useAutoDispatchOffer();
   const navigate = useNavigate();
 
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const expiryFiredRef = useRef<string | null>(null);
+
   const getDriver = useCallback((id: string) => drivers?.find((d) => d.driver_id === id), [drivers]);
   const driverAssigned = !!job?.assigned_driver_id;
 
@@ -61,6 +64,29 @@ const DriverOffer = () => {
       return result;
     };
   }, [drivers, trucks, incidentTypes, truckTypesData, autoDispatch, job]);
+
+  // Auto-expiry timer
+  useEffect(() => {
+    if (!pendingOffer?.expires_at || driverAssigned) {
+      setSecondsRemaining(null);
+      return;
+    }
+
+    const tick = () => {
+      const diff = new Date(pendingOffer.expires_at!).getTime() - Date.now();
+      const remaining = Math.max(0, Math.ceil(diff / 1000));
+      setSecondsRemaining(remaining);
+
+      if (remaining <= 0 && expiryFiredRef.current !== pendingOffer.offer_id) {
+        expiryFiredRef.current = pendingOffer.offer_id;
+        handleExpire(pendingOffer);
+      }
+    };
+
+    tick(); // immediate check (handles stale offers on mount)
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [pendingOffer?.offer_id, pendingOffer?.expires_at, driverAssigned]);
 
   if (!job) {
     return (
@@ -140,15 +166,6 @@ const DriverOffer = () => {
     expired: { color: "bg-muted text-muted-foreground", icon: Timer },
   };
 
-  const getTimeRemaining = (expiresAt: string | null) => {
-    if (!expiresAt) return null;
-    const diff = new Date(expiresAt).getTime() - Date.now();
-    if (diff <= 0) return "Expired";
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
-    return `${mins}m ${secs}s`;
-  };
-
   return (
     <div className="max-w-4xl space-y-6">
       <div>
@@ -209,9 +226,9 @@ const DriverOffer = () => {
                 <p className="font-mono text-[10px] text-muted-foreground">{pendingOffer.offer_id.slice(0, 8)}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-muted-foreground">Time Remaining</p>
-                <p className="font-mono text-sm font-medium text-accent">
-                  {getTimeRemaining(pendingOffer.expires_at)}
+                <p className="text-xs text-muted-foreground">Driver Response Timer</p>
+                <p className={`font-mono text-lg font-bold ${secondsRemaining !== null && secondsRemaining <= 10 ? "text-destructive" : "text-accent"}`}>
+                  {secondsRemaining !== null ? `${secondsRemaining}s remaining` : "—"}
                 </p>
               </div>
             </div>
@@ -262,14 +279,6 @@ const DriverOffer = () => {
                 disabled={declineOffer.isPending || autoDispatch.isPending}
               >
                 Decline
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleExpire(pendingOffer)}
-                disabled={expireOffer.isPending || autoDispatch.isPending}
-              >
-                Mark Expired
               </Button>
             </div>
           </CardContent>

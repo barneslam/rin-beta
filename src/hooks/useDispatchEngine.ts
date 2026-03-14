@@ -75,7 +75,7 @@ export function useDispatchRecommendation(jobId: string | null) {
 const WAVE_SIZE = 5;
 const MAX_WAVES = 2;
 const COOLDOWN_MINUTES = 5;
-const OFFER_EXPIRY_MINUTES = 15;
+const OFFER_EXPIRY_SECONDS = 60;
 
 // ---------------------------------------------------------------------------
 // Auto Dispatch Offer — sends to next eligible driver
@@ -116,6 +116,20 @@ export function useAutoDispatchOffer() {
       const attemptCount = attemptedDriverIds.size;
       const currentWave = attemptCount < WAVE_SIZE ? 1 : 2;
       const waveAttempt = currentWave === 1 ? attemptCount + 1 : attemptCount - WAVE_SIZE + 1;
+
+      // Safety: abort if there's already a pending offer for this job
+      const activePending = (existingOffers ?? []).find((o) => o.offer_status === "pending");
+      if (activePending) {
+        return {
+          escalated: false,
+          offer: activePending,
+          wave: currentWave,
+          waveAttempt,
+          totalAttempts: attemptCount,
+          driverName: null,
+          alreadyPending: true,
+        };
+      }
 
       // Check if max attempts reached
       if (attemptCount >= WAVE_SIZE * MAX_WAVES) {
@@ -161,7 +175,7 @@ export function useAutoDispatchOffer() {
 
       // 6. Pick top driver
       const pick = available[0];
-      const expiresAt = new Date(Date.now() + OFFER_EXPIRY_MINUTES * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + OFFER_EXPIRY_SECONDS * 1000).toISOString();
 
       // 7. Create offer
       const { data: offer, error: offerErr } = await supabase

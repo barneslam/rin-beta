@@ -16,7 +16,7 @@ export function useCreateDispatchOffer() {
       driverId: string;
       truckId: string;
     }) => {
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
 
       const { data: offer, error } = await supabase
         .from("dispatch_offers")
