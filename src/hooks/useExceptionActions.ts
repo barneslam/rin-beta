@@ -30,7 +30,6 @@ export function useAmendJob() {
           ...updates,
           amendment_reason: amendmentReason,
           job_status: "customer_reapproval_pending" as any,
-          customer_update_message: "Revised quote pending your approval",
         } as any)
         .eq("job_id", jobId)
         .select()
@@ -49,7 +48,6 @@ export function useAmendJob() {
         newValue: data as any,
       });
 
-      // Customer update event
       await supabase.from("job_events" as any).insert([{
         job_id: jobId,
         event_type: "customer_update",
@@ -92,7 +90,6 @@ export function useCustomerReapproval() {
           .from("jobs")
           .update({
             job_status: restoreStatus as any,
-            customer_update_message: "Customer approved revised quote",
           } as any)
           .eq("job_id", jobId)
           .select()
@@ -112,7 +109,6 @@ export function useCustomerReapproval() {
 
         return data;
       } else {
-        // Decline → cancel
         const { data, error } = await supabase
           .from("jobs")
           .update({
@@ -120,7 +116,6 @@ export function useCustomerReapproval() {
             cancelled_reason: "Customer declined revised quote",
             cancelled_by: "customer",
             cancellation_fee: 0,
-            customer_update_message: "Cancellation confirmed",
           } as any)
           .eq("job_id", jobId)
           .select()
@@ -173,7 +168,6 @@ export function useRequestReassignment() {
           reassignment_reason: reason,
           assigned_driver_id: null,
           assigned_truck_id: null,
-          customer_update_message: "Job is being reassigned to another driver",
         } as any)
         .eq("job_id", jobId)
         .select()
@@ -235,7 +229,6 @@ export function useMarkDriverUnavailable() {
           job_status: "driver_unavailable" as any,
           assigned_driver_id: null,
           assigned_truck_id: null,
-          customer_update_message: "Assigned driver is unavailable and your job is being reviewed",
         } as any)
         .eq("job_id", jobId)
         .select()
@@ -323,7 +316,6 @@ export function useCancelJob() {
           cancellation_fee: fee,
           cancelled_reason: reason,
           cancelled_by: cancelledBy,
-          customer_update_message: "Cancellation confirmed",
         } as any)
         .eq("job_id", jobId)
         .select()

@@ -2,14 +2,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useActiveJob } from "@/context/JobContext";
-import { useDispatchRecommendation, useCreateDispatchOffer } from "@/hooks/useDispatchEngine";
+import { useDispatchRecommendation, useAutoDispatchOffer } from "@/hooks/useDispatchEngine";
+import { useDrivers, useTrucks, useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
 import { toast } from "sonner";
-import { AlertTriangle, Bug } from "lucide-react";
+import { AlertTriangle, Zap } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const DriverMatching = () => {
   const { activeJobId } = useActiveJob();
   const { job, rankedDrivers, eligibleTrucks, eligibleDrivers, classification, truckTypes, isLoading } = useDispatchRecommendation(activeJobId);
-  const createOffer = useCreateDispatchOffer();
+  const autoDispatch = useAutoDispatchOffer();
+  const { data: drivers } = useDrivers();
+  const { data: trucks } = useTrucks();
+  const { data: incidentTypes } = useIncidentTypes();
+  const { data: truckTypesData } = useTruckTypes();
+  const navigate = useNavigate();
 
   if (!job) {
     return (
@@ -22,16 +29,28 @@ const DriverMatching = () => {
   const getTruckTypeName = (id: string | null) =>
     truckTypes.find((t) => t.truck_type_id === id)?.name || "—";
 
-  const handlePrepareOffer = async (driverId: string, truckId: string) => {
+  const handleStartAutoDispatch = async () => {
+    if (!drivers || !trucks || !incidentTypes || !truckTypesData) {
+      toast.error("Reference data not loaded yet");
+      return;
+    }
     try {
-      await createOffer.mutateAsync({
+      const result = await autoDispatch.mutateAsync({
         jobId: job.job_id,
-        driverId,
-        truckId,
+        drivers,
+        trucks,
+        incidentTypes,
+        truckTypes: truckTypesData,
       });
-      toast.success("Dispatch offer prepared");
+      if (result.escalated) {
+        toast.error("No eligible drivers found. Job moved to Exception Queue.");
+        navigate("/control-panel");
+      } else {
+        toast.success(`Offer sent to ${result.driverName} (Wave ${result.wave})`);
+        navigate("/offer");
+      }
     } catch {
-      toast.error("Failed to prepare offer");
+      toast.error("Failed to start automatic dispatch");
     }
   };
 
@@ -44,32 +63,26 @@ const DriverMatching = () => {
         </p>
       </div>
 
-      {/* Debug Card — Temporary */}
-      <Card className="border-dashed border-muted-foreground/30 bg-muted/30">
-        <CardHeader className="pb-2 pt-3 px-4">
-          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
-            <Bug className="h-3.5 w-3.5" /> Debug — Dispatch Pipeline
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-3">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
-            <span className="text-muted-foreground">required_truck_type_id</span>
-            <span>{job.required_truck_type_id || <em className="text-destructive">null</em>}</span>
-            <span className="text-muted-foreground">resolved truck type</span>
-            <span>{getTruckTypeName(job.required_truck_type_id)}</span>
-            <span className="text-muted-foreground">classification truckTypeId</span>
-            <span>{classification?.truckTypeId || "null"}</span>
-            <span className="text-muted-foreground">classification truck type</span>
-            <span>{getTruckTypeName(classification?.truckTypeId ?? null)}</span>
-            <span className="text-muted-foreground">eligible trucks</span>
-            <span className="font-bold">{eligibleTrucks.length}</span>
-            <span className="text-muted-foreground">eligible drivers</span>
-            <span className="font-bold">{eligibleDrivers.length}</span>
-            <span className="text-muted-foreground">ranked drivers</span>
-            <span className="font-bold">{rankedDrivers.length}</span>
-          </div>
-        </CardContent>
-      </Card>
+      {rankedDrivers.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Automatic Dispatch Ready</p>
+              <p className="text-xs text-muted-foreground">
+                {rankedDrivers.length} eligible drivers found. System will automatically route offers through up to 10 drivers in two waves.
+              </p>
+            </div>
+            <Button
+              onClick={handleStartAutoDispatch}
+              disabled={autoDispatch.isPending}
+              className="gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              {autoDispatch.isPending ? "Sending…" : "Start Automatic Dispatch"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
@@ -123,14 +136,6 @@ const DriverMatching = () => {
                     <Badge variant="secondary" className="text-xs">
                       {getTruckTypeName(truck.truck_type_id)}
                     </Badge>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handlePrepareOffer(driver.driver_id, truck.truck_id)}
-                      disabled={createOffer.isPending}
-                    >
-                      Prepare Offer
-                    </Button>
                   </div>
                 </div>
               ))}
