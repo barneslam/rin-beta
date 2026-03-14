@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useJob, useUpdateJob } from "@/hooks/useJobs";
+import { useJob } from "@/hooks/useJobs";
 import { useDrivers, useTrucks, useIncidentTypes, useTruckTypes, useEquipment } from "@/hooks/useReferenceData";
+import { createAuditAndEvent } from "@/hooks/useJobEvents";
 import {
   validateJobForDispatch,
   classifyIncident,
@@ -14,6 +15,10 @@ import {
   type RankedDriver,
 } from "@/lib/dispatchEngine";
 import type { Driver, Truck, TruckType, Equipment } from "@/types/rin";
+
+// ---------------------------------------------------------------------------
+// Dispatch Recommendation (read-only ranking)
+// ---------------------------------------------------------------------------
 
 export function useDispatchRecommendation(jobId: string | null) {
   const { data: job, isLoading: jobLoading } = useJob(jobId);
@@ -41,7 +46,6 @@ export function useDispatchRecommendation(jobId: string | null) {
     const validationResult = validateJobForDispatch(job);
     const classification = classifyIncident(job, incidentTypes);
 
-    // Fallback: if job has no required_truck_type_id, use classification result
     const effectiveJob = (!job.required_truck_type_id && classification?.truckTypeId)
       ? { ...job, required_truck_type_id: classification.truckTypeId }
       : job;
@@ -64,69 +68,183 @@ export function useDispatchRecommendation(jobId: string | null) {
   return { ...result, job, isLoading };
 }
 
-export function useCreateDispatchOffer() {
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const WAVE_SIZE = 5;
+const MAX_WAVES = 2;
+const COOLDOWN_MINUTES = 5;
+const OFFER_EXPIRY_MINUTES = 15;
+
+// ---------------------------------------------------------------------------
+// Auto Dispatch Offer — sends to next eligible driver
+// ---------------------------------------------------------------------------
+
+export function useAutoDispatchOffer() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
       jobId,
-      driverId,
-      truckId,
+      drivers,
+      trucks,
+      incidentTypes,
+      truckTypes,
     }: {
       jobId: string;
-      driverId: string;
-      truckId: string;
+      drivers: Driver[];
+      trucks: Truck[];
+      incidentTypes: any[];
+      truckTypes: TruckType[];
     }) => {
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      // 1. Get job
+      const { data: job, error: jobErr } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("job_id", jobId)
+        .single();
+      if (jobErr || !job) throw new Error("Job not found");
 
-      // Create offer
-      const { data: offer, error } = await supabase
+      // 2. Get all existing offers for this job (attempted drivers)
+      const { data: existingOffers } = await supabase
+        .from("dispatch_offers")
+        .select("*")
+        .eq("job_id", jobId);
+
+      const attemptedDriverIds = new Set((existingOffers ?? []).map((o) => o.driver_id));
+      const attemptCount = attemptedDriverIds.size;
+      const currentWave = attemptCount < WAVE_SIZE ? 1 : 2;
+      const waveAttempt = currentWave === 1 ? attemptCount + 1 : attemptCount - WAVE_SIZE + 1;
+
+      // Check if max attempts reached
+      if (attemptCount >= WAVE_SIZE * MAX_WAVES) {
+        return await escalateJob(jobId, job);
+      }
+
+      // 3. Get cooldown drivers (declined/expired in last 5 min across all jobs)
+      const cooldownTime = new Date(Date.now() - COOLDOWN_MINUTES * 60 * 1000).toISOString();
+      const { data: recentOffers } = await supabase
+        .from("dispatch_offers")
+        .select("driver_id")
+        .in("offer_status", ["declined", "expired"] as any)
+        .gte("created_at", cooldownTime);
+
+      const cooldownDriverIds = new Set((recentOffers ?? []).map((o) => o.driver_id));
+
+      // 4. Rank eligible drivers using existing engine
+      const classification = classifyIncident(job as any, incidentTypes);
+      const effectiveJob = (!job.required_truck_type_id && classification?.truckTypeId)
+        ? { ...job, required_truck_type_id: classification.truckTypeId }
+        : job;
+
+      const eligibleTrucks = matchTruckCapability(effectiveJob as any, trucks);
+      const eligible = filterEligibleDrivers(effectiveJob as any, drivers, eligibleTrucks);
+      const ranked = rankDrivers(eligible, effectiveJob as any, eligibleTrucks);
+
+      // 5. Filter out attempted + cooldown drivers
+      const available = ranked.filter(
+        (r) => !attemptedDriverIds.has(r.driver.driver_id) && !cooldownDriverIds.has(r.driver.driver_id)
+      );
+
+      if (available.length === 0) {
+        // If we're in wave 1 and no more drivers, check if wave 2 is possible
+        if (currentWave === 1 && attemptCount < WAVE_SIZE) {
+          // No eligible drivers at all — escalate
+          return await escalateJob(jobId, job);
+        }
+        // Wave boundary or exhaustion
+        if (attemptCount >= WAVE_SIZE * MAX_WAVES || available.length === 0) {
+          return await escalateJob(jobId, job);
+        }
+      }
+
+      // 6. Pick top driver
+      const pick = available[0];
+      const expiresAt = new Date(Date.now() + OFFER_EXPIRY_MINUTES * 60 * 1000).toISOString();
+
+      // 7. Create offer
+      const { data: offer, error: offerErr } = await supabase
         .from("dispatch_offers")
         .insert({
           job_id: jobId,
-          driver_id: driverId,
-          truck_id: truckId,
+          driver_id: pick.driver.driver_id,
+          truck_id: pick.truck.truck_id,
           offer_status: "pending",
           expires_at: expiresAt,
         })
         .select()
         .single();
-      if (error) throw error;
+      if (offerErr) throw offerErr;
 
-      // Increment dispatch_attempt_count
-      const { data: currentJob } = await supabase
-        .from("jobs")
-        .select("dispatch_attempt_count")
-        .eq("job_id", jobId)
-        .single();
-
+      // 8. Update job
       await supabase
         .from("jobs")
         .update({
-          job_status: "driver_offer_prepared" as any,
-          dispatch_attempt_count: ((currentJob?.dispatch_attempt_count as number) ?? 0) + 1,
+          job_status: "driver_offer_sent" as any,
+          dispatch_attempt_count: attemptCount + 1,
         })
         .eq("job_id", jobId);
 
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        job_id: jobId,
-        action_type: `Offer prepared for driver ${driverId.slice(0, 8)}`,
-        event_type: "offer_sent",
-        event_source: "matching_screen",
-        performed_by: "system",
-        new_value: offer as any,
+      // 9. Create events
+      await createAuditAndEvent(jobId, {
+        auditActionType: `Offer sent to driver ${pick.driver.driver_name} (Wave ${currentWave}, attempt ${waveAttempt})`,
+        auditEventType: "offer_sent",
+        auditEventSource: "dispatch_engine",
+        eventType: "offer_sent",
+        eventCategory: "dispatch",
+        message: `Offer sent to driver ${pick.driver.driver_name}`,
+        newValue: { driver_id: pick.driver.driver_id, wave: currentWave, attempt: waveAttempt },
       });
 
-      return offer;
+      return {
+        escalated: false,
+        offer,
+        wave: currentWave,
+        waveAttempt,
+        totalAttempts: attemptCount + 1,
+        driverName: pick.driver.driver_name,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dispatch_offers"] });
+      queryClient.invalidateQueries({ queryKey: ["job_events"] });
       queryClient.invalidateQueries({ queryKey: ["audit_logs"] });
     },
   });
 }
+
+async function escalateJob(jobId: string, job: any) {
+  await supabase
+    .from("jobs")
+    .update({ job_status: "reassignment_required" as any })
+    .eq("job_id", jobId);
+
+  await createAuditAndEvent(jobId, {
+    auditActionType: "Automatic driver offer attempts exhausted after two waves",
+    auditEventType: "reassignment_requested",
+    auditEventSource: "dispatch_engine",
+    eventType: "offers_exhausted",
+    eventCategory: "exception",
+    message: "Automatic driver offer attempts exhausted after two waves. Administrator review required.",
+    oldValue: { job_status: job.job_status, dispatch_attempt_count: job.dispatch_attempt_count },
+    newValue: { job_status: "reassignment_required" },
+  });
+
+  await supabase.from("job_events" as any).insert([{
+    job_id: jobId,
+    event_type: "customer_update",
+    event_category: "customer_update",
+    message: "We are working to assign a driver to your job. Please stand by.",
+  }] as any);
+
+  return { escalated: true, offer: null, wave: 2, waveAttempt: 5, totalAttempts: 10, driverName: null };
+}
+
+// ---------------------------------------------------------------------------
+// Accept Dispatch Offer
+// ---------------------------------------------------------------------------
 
 export function useAcceptDispatchOffer() {
   const queryClient = useQueryClient();
@@ -143,7 +261,6 @@ export function useAcceptDispatchOffer() {
       driverId: string;
       truckId: string | null;
     }) => {
-      // Get current job status
       const { data: currentJob } = await supabase
         .from("jobs")
         .select("job_status")
@@ -159,7 +276,7 @@ export function useAcceptDispatchOffer() {
         .eq("offer_id", offerId);
       if (offerErr) throw offerErr;
 
-      // Expire all other pending offers for this job
+      // Expire all other pending offers
       await supabase
         .from("dispatch_offers")
         .update({ offer_status: "expired" as any })
@@ -167,7 +284,7 @@ export function useAcceptDispatchOffer() {
         .neq("offer_id", offerId)
         .eq("offer_status", "pending");
 
-      // Assign driver and update job status
+      // Assign driver
       const { error: jobErr } = await supabase
         .from("jobs")
         .update({
@@ -178,24 +295,29 @@ export function useAcceptDispatchOffer() {
         .eq("job_id", jobId);
       if (jobErr) throw jobErr;
 
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        job_id: jobId,
-        action_type: `Status: ${oldStatus} → driver_assigned`,
-        event_type: "driver_assigned",
-        event_source: "offer_screen",
-        performed_by: "system",
-        old_value: { job_status: oldStatus } as any,
-        new_value: { job_status: "driver_assigned" } as any,
+      await createAuditAndEvent(jobId, {
+        auditActionType: `Status: ${oldStatus} → driver_assigned`,
+        auditEventType: "driver_assigned",
+        auditEventSource: "offer_screen",
+        eventType: "driver_accepted",
+        eventCategory: "dispatch",
+        message: "Driver accepted job",
+        oldValue: { job_status: oldStatus },
+        newValue: { job_status: "driver_assigned", assigned_driver_id: driverId },
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dispatch_offers"] });
+      queryClient.invalidateQueries({ queryKey: ["job_events"] });
       queryClient.invalidateQueries({ queryKey: ["audit_logs"] });
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Decline Dispatch Offer — then auto-advance
+// ---------------------------------------------------------------------------
 
 export function useDeclineDispatchOffer() {
   const queryClient = useQueryClient();
@@ -205,10 +327,14 @@ export function useDeclineDispatchOffer() {
       offerId,
       jobId,
       driverId,
+      driverName,
+      autoAdvanceFn,
     }: {
       offerId: string;
       jobId: string;
       driverId: string;
+      driverName?: string;
+      autoAdvanceFn?: () => Promise<any>;
     }) => {
       // Decline this offer
       const { error } = await supabase
@@ -217,55 +343,82 @@ export function useDeclineDispatchOffer() {
         .eq("offer_id", offerId);
       if (error) throw error;
 
-      // Audit log for decline
-      await supabase.from("audit_logs").insert({
-        job_id: jobId,
-        action_type: `Offer declined for driver ${driverId.slice(0, 8)}`,
-        event_type: "offer_responded",
-        event_source: "offer_screen",
-        performed_by: "system",
+      await createAuditAndEvent(jobId, {
+        auditActionType: `Offer declined by driver ${driverName || driverId.slice(0, 8)}`,
+        auditEventType: "offer_responded",
+        auditEventSource: "offer_screen",
+        eventType: "offer_declined",
+        eventCategory: "dispatch",
+        message: `Driver ${driverName || "unknown"} declined job offer`,
       });
 
-      // Check if any pending offers remain
-      const { data: remaining } = await supabase
-        .from("dispatch_offers")
-        .select("offer_id")
-        .eq("job_id", jobId)
-        .eq("offer_status", "pending");
-
-      const { data: currentJob } = await supabase
-        .from("jobs")
-        .select("job_status, assigned_driver_id")
-        .eq("job_id", jobId)
-        .single();
-
-      // If no pending offers and no driver assigned, reset to matching
-      if ((!remaining || remaining.length === 0) && !currentJob?.assigned_driver_id) {
-        const oldStatus = currentJob?.job_status;
-        await supabase
-          .from("jobs")
-          .update({ job_status: "dispatch_recommendation_ready" as any })
-          .eq("job_id", jobId);
-
-        await supabase.from("audit_logs").insert({
-          job_id: jobId,
-          action_type: `Status: ${oldStatus} → dispatch_recommendation_ready (all offers exhausted)`,
-          event_type: "status_changed",
-          event_source: "offer_screen",
-          performed_by: "system",
-          old_value: { job_status: oldStatus } as any,
-          new_value: { job_status: "dispatch_recommendation_ready" } as any,
-        });
-
-        return { allExhausted: true };
+      // Auto-advance to next driver
+      if (autoAdvanceFn) {
+        return await autoAdvanceFn();
       }
 
-      return { allExhausted: false };
+      return { autoAdvanced: false };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dispatch_offers"] });
+      queryClient.invalidateQueries({ queryKey: ["job_events"] });
       queryClient.invalidateQueries({ queryKey: ["audit_logs"] });
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Expire Dispatch Offer — then auto-advance
+// ---------------------------------------------------------------------------
+
+export function useExpireDispatchOffer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      offerId,
+      jobId,
+      driverId,
+      driverName,
+      autoAdvanceFn,
+    }: {
+      offerId: string;
+      jobId: string;
+      driverId: string;
+      driverName?: string;
+      autoAdvanceFn?: () => Promise<any>;
+    }) => {
+      const { error } = await supabase
+        .from("dispatch_offers")
+        .update({ offer_status: "expired" as any })
+        .eq("offer_id", offerId);
+      if (error) throw error;
+
+      await createAuditAndEvent(jobId, {
+        auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)}`,
+        auditEventType: "offer_responded",
+        auditEventSource: "offer_screen",
+        eventType: "offer_expired",
+        eventCategory: "dispatch",
+        message: `Driver ${driverName || "unknown"} offer expired`,
+      });
+
+      // Auto-advance to next driver
+      if (autoAdvanceFn) {
+        return await autoAdvanceFn();
+      }
+
+      return { autoAdvanced: false };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatch_offers"] });
+      queryClient.invalidateQueries({ queryKey: ["job_events"] });
+      queryClient.invalidateQueries({ queryKey: ["audit_logs"] });
+    },
+  });
+}
+
+// Re-export for backward compatibility
+export { useCreateDispatchOffer } from "@/hooks/useDispatchEngineCompat";
