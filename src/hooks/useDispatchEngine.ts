@@ -13,7 +13,7 @@ import {
   type IncidentClassification,
   type RankedDriver,
 } from "@/lib/dispatchEngine";
-import type { Truck, TruckType, Equipment } from "@/types/rin";
+import type { Driver, Truck, TruckType, Equipment } from "@/types/rin";
 
 export function useDispatchRecommendation(jobId: string | null) {
   const { data: job, isLoading: jobLoading } = useJob(jobId);
