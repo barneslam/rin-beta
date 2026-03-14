@@ -39,9 +39,15 @@ export function useDispatchRecommendation(jobId: string | null) {
 
     const validationResult = validateJobForDispatch(job);
     const classification = classifyIncident(job, incidentTypes);
-    const eligibleTrucks = matchTruckCapability(job, trucks);
-    const eligible = filterEligibleDrivers(job, drivers, eligibleTrucks);
-    const rankedDrivers = rankDrivers(eligible, job, eligibleTrucks);
+
+    // Fallback: if job has no required_truck_type_id, use classification result
+    const effectiveJob = (!job.required_truck_type_id && classification?.truckTypeId)
+      ? { ...job, required_truck_type_id: classification.truckTypeId }
+      : job;
+
+    const eligibleTrucks = matchTruckCapability(effectiveJob, trucks);
+    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks);
+    const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks);
 
     return {
       validationResult,
