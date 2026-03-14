@@ -40,15 +40,15 @@ async function createAuditLog(
   oldValue?: Record<string, unknown> | null,
   newValue?: Record<string, unknown> | null
 ) {
-  await supabase.from("audit_logs").insert({
+  await supabase.from("audit_logs").insert([{
     job_id: jobId,
     action_type: actionType,
     event_type: eventType,
     event_source: eventSource,
     performed_by: "system",
-    old_value: oldValue as Record<string, unknown> | undefined,
-    new_value: newValue as Record<string, unknown> | undefined,
-  });
+    old_value: (oldValue ?? undefined) as any,
+    new_value: (newValue ?? undefined) as any,
+  }]);
 }
 
 export function useCreateJob() {
