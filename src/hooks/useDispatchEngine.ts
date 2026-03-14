@@ -161,7 +161,7 @@ export function useAutoDispatchOffer() {
 
       // 6. Pick top driver
       const pick = available[0];
-      const expiresAt = new Date(Date.now() + OFFER_EXPIRY_MINUTES * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + OFFER_EXPIRY_SECONDS * 1000).toISOString();
 
       // 7. Create offer
       const { data: offer, error: offerErr } = await supabase
