@@ -11,6 +11,7 @@ import PricingAuth from "./pages/PricingAuth";
 import DriverMatching from "./pages/DriverMatching";
 import DriverOffer from "./pages/DriverOffer";
 import JobTracking from "./pages/JobTracking";
+import DispatchControlPanel from "./pages/DispatchControlPanel";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
