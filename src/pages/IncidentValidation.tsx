@@ -8,6 +8,20 @@ import { useActiveJob } from "@/context/JobContext";
 import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { validateJobForDispatch } from "@/lib/dispatchEngine";
+import { CheckCircle2, XCircle } from "lucide-react";
+
+const FIELD_LABELS: Record<string, string> = {
+  incident_type_id: "Incident Type",
+  pickup_location: "Pickup Location",
+  gps_lat: "GPS Latitude",
+  gps_long: "GPS Longitude",
+  vehicle_make: "Vehicle Make",
+  vehicle_model: "Vehicle Model",
+  vehicle_year: "Vehicle Year",
+  can_vehicle_roll: "Can Vehicle Roll",
+  location_type: "Location Type",
+};
 
 const IncidentValidation = () => {
   const { activeJobId } = useActiveJob();
@@ -22,18 +36,7 @@ const IncidentValidation = () => {
     );
   }
 
-  const handleValidate = async () => {
-    try {
-      await updateJob.mutateAsync({
-        jobId: job.job_id,
-        updates: { job_status: "validation_required" },
-        eventSource: "validation_screen",
-      });
-      toast.success("Job marked for validation");
-    } catch {
-      toast.error("Failed to update job");
-    }
-  };
+  const validation = validateJobForDispatch(job);
 
   const handleConfirm = async () => {
     try {
@@ -54,6 +57,39 @@ const IncidentValidation = () => {
         <h1 className="text-xl font-bold">Step 2 — Incident Validation</h1>
         <p className="text-sm text-muted-foreground">Review and confirm incident details before dispatch.</p>
       </div>
+
+      {/* Validation Status Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            Validation Status
+            {validation.valid ? (
+              <Badge className="bg-success/15 text-success">Ready</Badge>
+            ) : (
+              <Badge className="bg-destructive/10 text-destructive">{validation.missingFields.length} Missing</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Object.entries(FIELD_LABELS).map(([field, label]) => {
+              const present = validation.presentFields.includes(field);
+              return (
+                <div key={field} className="flex items-center gap-2 text-sm py-1">
+                  {present ? (
+                    <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                  )}
+                  <span className={present ? "text-foreground" : "text-destructive font-medium"}>
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -126,12 +162,17 @@ const IncidentValidation = () => {
       </div>
 
       <div className="flex gap-3">
-        <Button variant="outline" onClick={handleValidate} disabled={updateJob.isPending}>
-          Mark for Validation
+        <Button
+          onClick={handleConfirm}
+          disabled={!validation.valid || updateJob.isPending}
+        >
+          Confirm &amp; Ready for Dispatch
         </Button>
-        <Button onClick={handleConfirm} disabled={updateJob.isPending}>
-          Confirm & Ready for Dispatch
-        </Button>
+        {!validation.valid && (
+          <p className="text-xs text-muted-foreground self-center">
+            Complete all required fields before confirming.
+          </p>
+        )}
       </div>
     </div>
   );
