@@ -13,7 +13,7 @@ import {
   type IncidentClassification,
   type RankedDriver,
 } from "@/lib/dispatchEngine";
-import type { Truck, TruckType, Equipment } from "@/types/rin";
+import type { Driver, Truck, TruckType, Equipment } from "@/types/rin";
 
 export function useDispatchRecommendation(jobId: string | null) {
   const { data: job, isLoading: jobLoading } = useJob(jobId);
@@ -31,6 +31,7 @@ export function useDispatchRecommendation(jobId: string | null) {
         validationResult: null as ValidationResult | null,
         classification: null as IncidentClassification | null,
         eligibleTrucks: [] as Truck[],
+        eligibleDrivers: [] as Driver[],
         rankedDrivers: [] as RankedDriver[],
         truckTypes: (truckTypes ?? []) as TruckType[],
         equipment: (equipment ?? []) as Equipment[],
@@ -39,14 +40,21 @@ export function useDispatchRecommendation(jobId: string | null) {
 
     const validationResult = validateJobForDispatch(job);
     const classification = classifyIncident(job, incidentTypes);
-    const eligibleTrucks = matchTruckCapability(job, trucks);
-    const eligible = filterEligibleDrivers(job, drivers, eligibleTrucks);
-    const rankedDrivers = rankDrivers(eligible, job, eligibleTrucks);
+
+    // Fallback: if job has no required_truck_type_id, use classification result
+    const effectiveJob = (!job.required_truck_type_id && classification?.truckTypeId)
+      ? { ...job, required_truck_type_id: classification.truckTypeId }
+      : job;
+
+    const eligibleTrucks = matchTruckCapability(effectiveJob, trucks);
+    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks);
+    const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks);
 
     return {
       validationResult,
       classification,
       eligibleTrucks,
+      eligibleDrivers: eligible,
       rankedDrivers,
       truckTypes: (truckTypes ?? []) as TruckType[],
       equipment: (equipment ?? []) as Equipment[],

@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { useActiveJob } from "@/context/JobContext";
 import { useDispatchRecommendation, useCreateDispatchOffer } from "@/hooks/useDispatchEngine";
 import { toast } from "sonner";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Bug } from "lucide-react";
 
 const DriverMatching = () => {
   const { activeJobId } = useActiveJob();
-  const { job, rankedDrivers, truckTypes, isLoading } = useDispatchRecommendation(activeJobId);
+  const { job, rankedDrivers, eligibleTrucks, eligibleDrivers, classification, truckTypes, isLoading } = useDispatchRecommendation(activeJobId);
   const createOffer = useCreateDispatchOffer();
 
   if (!job) {
@@ -19,7 +19,7 @@ const DriverMatching = () => {
     );
   }
 
-  const getTruckTypeName = (id: string) =>
+  const getTruckTypeName = (id: string | null) =>
     truckTypes.find((t) => t.truck_type_id === id)?.name || "—";
 
   const handlePrepareOffer = async (driverId: string, truckId: string) => {
@@ -43,6 +43,33 @@ const DriverMatching = () => {
           Ranked drivers based on proximity, rating, reliability, and availability.
         </p>
       </div>
+
+      {/* Debug Card — Temporary */}
+      <Card className="border-dashed border-muted-foreground/30 bg-muted/30">
+        <CardHeader className="pb-2 pt-3 px-4">
+          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
+            <Bug className="h-3.5 w-3.5" /> Debug — Dispatch Pipeline
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
+            <span className="text-muted-foreground">required_truck_type_id</span>
+            <span>{job.required_truck_type_id || <em className="text-destructive">null</em>}</span>
+            <span className="text-muted-foreground">resolved truck type</span>
+            <span>{getTruckTypeName(job.required_truck_type_id)}</span>
+            <span className="text-muted-foreground">classification truckTypeId</span>
+            <span>{classification?.truckTypeId || "null"}</span>
+            <span className="text-muted-foreground">classification truck type</span>
+            <span>{getTruckTypeName(classification?.truckTypeId ?? null)}</span>
+            <span className="text-muted-foreground">eligible trucks</span>
+            <span className="font-bold">{eligibleTrucks.length}</span>
+            <span className="text-muted-foreground">eligible drivers</span>
+            <span className="font-bold">{eligibleDrivers.length}</span>
+            <span className="text-muted-foreground">ranked drivers</span>
+            <span className="font-bold">{rankedDrivers.length}</span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
