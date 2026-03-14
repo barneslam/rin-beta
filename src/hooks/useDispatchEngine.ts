@@ -53,6 +53,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       validationResult,
       classification,
       eligibleTrucks,
+      eligibleDrivers: eligible,
       rankedDrivers,
       truckTypes: (truckTypes ?? []) as TruckType[],
       equipment: (equipment ?? []) as Equipment[],
