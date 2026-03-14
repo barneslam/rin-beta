@@ -31,6 +31,7 @@ export function useDispatchRecommendation(jobId: string | null) {
         validationResult: null as ValidationResult | null,
         classification: null as IncidentClassification | null,
         eligibleTrucks: [] as Truck[],
+        eligibleDrivers: [] as Driver[],
         rankedDrivers: [] as RankedDriver[],
         truckTypes: (truckTypes ?? []) as TruckType[],
         equipment: (equipment ?? []) as Equipment[],
