@@ -11,6 +11,7 @@ import PricingAuth from "./pages/PricingAuth";
 import DriverMatching from "./pages/DriverMatching";
 import DriverOffer from "./pages/DriverOffer";
 import JobTracking from "./pages/JobTracking";
+import DispatchControlPanel from "./pages/DispatchControlPanel";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/matching" element={<DriverMatching />} />
             <Route path="/offer" element={<DriverOffer />} />
             <Route path="/tracking" element={<JobTracking />} />
+            <Route path="/control-panel" element={<DispatchControlPanel />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppLayout>

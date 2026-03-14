@@ -109,3 +109,19 @@ export function useAuditLogs(jobId?: string) {
     },
   });
 }
+
+export function useJobEventsForFeed() {
+  return useQuery({
+    queryKey: ["job_events", "feed"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("job_events" as any)
+        .select("*")
+        .eq("event_category", "customer_update")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data as any[];
+    },
+  });
+}

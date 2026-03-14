@@ -34,7 +34,7 @@ export const JOB_STEPS = [
   { key: "tracking", label: "Job Tracking", path: "/tracking", step: 7 },
 ] as const;
 
-export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
+export const JOB_STATUS_LABELS: Record<string, string> = {
   intake_started: "Intake Started",
   intake_completed: "Intake Completed",
   validation_required: "Validation Required",
@@ -48,9 +48,14 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   vehicle_loaded: "Vehicle Loaded",
   job_completed: "Job Completed",
   job_amended: "Job Amended",
+  customer_reapproval_pending: "Customer Re-Approval Pending",
+  reassignment_required: "Reassignment Required",
+  driver_unavailable: "Driver Unavailable",
+  cancelled_by_customer: "Cancelled by Customer",
+  cancelled_after_dispatch: "Cancelled After Dispatch",
 };
 
-export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
+export const JOB_STATUS_COLORS: Record<string, string> = {
   intake_started: "bg-muted text-muted-foreground",
   intake_completed: "bg-primary/10 text-primary",
   validation_required: "bg-accent/20 text-accent-foreground",
@@ -64,4 +69,24 @@ export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   vehicle_loaded: "bg-success/35 text-success",
   job_completed: "bg-success/20 text-success",
   job_amended: "bg-destructive/10 text-destructive",
+  customer_reapproval_pending: "bg-accent/40 text-accent-foreground",
+  reassignment_required: "bg-destructive/15 text-destructive",
+  driver_unavailable: "bg-destructive/20 text-destructive",
+  cancelled_by_customer: "bg-destructive/25 text-destructive",
+  cancelled_after_dispatch: "bg-destructive/30 text-destructive",
 };
+
+export interface JobEvent {
+  event_id: string;
+  job_id: string;
+  event_type: string;
+  event_category: string;
+  event_status: string | null;
+  actor_type: string | null;
+  actor_id: string | null;
+  message: string | null;
+  reason: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  created_at: string;
+}
