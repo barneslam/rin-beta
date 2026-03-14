@@ -12,6 +12,7 @@ export type Equipment = Database["public"]["Tables"]["equipment"]["Row"];
 export type IncidentType = Database["public"]["Tables"]["incident_types"]["Row"];
 export type PricingRule = Database["public"]["Tables"]["pricing_rules"]["Row"];
 export type DispatchOffer = Database["public"]["Tables"]["dispatch_offers"]["Row"];
+export type DispatchOfferInsert = Database["public"]["Tables"]["dispatch_offers"]["Insert"];
 export type AuditLog = Database["public"]["Tables"]["audit_logs"]["Row"];
 export type Review = Database["public"]["Tables"]["reviews"]["Row"];
 export type User = Database["public"]["Tables"]["users"]["Row"];
@@ -38,6 +39,8 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   intake_completed: "Intake Completed",
   validation_required: "Validation Required",
   ready_for_dispatch: "Ready for Dispatch",
+  dispatch_recommendation_ready: "Recommendation Ready",
+  driver_offer_prepared: "Offer Prepared",
   driver_offer_sent: "Offer Sent",
   driver_assigned: "Driver Assigned",
   driver_enroute: "Driver En Route",
@@ -50,6 +53,8 @@ export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   intake_completed: "bg-primary/10 text-primary",
   validation_required: "bg-accent/20 text-accent-foreground",
   ready_for_dispatch: "bg-primary/15 text-primary",
+  dispatch_recommendation_ready: "bg-primary/20 text-primary",
+  driver_offer_prepared: "bg-accent/25 text-accent-foreground",
   driver_offer_sent: "bg-accent/30 text-accent-foreground",
   driver_assigned: "bg-success/15 text-success",
   driver_enroute: "bg-success/25 text-success",

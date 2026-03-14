@@ -1,14 +1,24 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useActiveJob } from "@/context/JobContext";
-import { useJob } from "@/hooks/useJobs";
-import { useTruckTypes, useEquipment } from "@/hooks/useReferenceData";
+import { useUpdateJob } from "@/hooks/useJobs";
+import { useDispatchRecommendation } from "@/hooks/useDispatchEngine";
+import { toast } from "sonner";
 
 const DispatchDecision = () => {
   const { activeJobId } = useActiveJob();
-  const { data: job } = useJob(activeJobId);
-  const { data: truckTypes } = useTruckTypes();
-  const { data: equipment } = useEquipment();
+  const {
+    job,
+    validationResult,
+    classification,
+    eligibleTrucks,
+    rankedDrivers,
+    truckTypes,
+    equipment,
+    isLoading,
+  } = useDispatchRecommendation(activeJobId);
+  const updateJob = useUpdateJob();
 
   if (!job) {
     return (
@@ -18,15 +28,38 @@ const DispatchDecision = () => {
     );
   }
 
-  const requiredTruckType = truckTypes?.find((t) => t.truck_type_id === job.required_truck_type_id);
-  const requiredEquipIds = (job.required_equipment as string[]) || [];
-  const requiredEquipNames = equipment?.filter((e) => requiredEquipIds.includes(e.equipment_id)).map((e) => e.name) || [];
+  const requiredTruckType = truckTypes.find((t) => t.truck_type_id === job.required_truck_type_id);
+  const classifiedTruckType = classification?.truckTypeId
+    ? truckTypes.find((t) => t.truck_type_id === classification.truckTypeId)
+    : null;
+
+  const requiredEquipIds = classification?.requiredEquipment || [];
+  const requiredEquipNames = equipment
+    .filter((e) => requiredEquipIds.includes(e.equipment_id))
+    .map((e) => e.name);
+
+  const complexityLabels: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High", 4: "Critical" };
+
+  const handleRunRecommendation = async () => {
+    try {
+      await updateJob.mutateAsync({
+        jobId: job.job_id,
+        updates: { job_status: "dispatch_recommendation_ready" as any },
+        eventSource: "dispatch_screen",
+      });
+      toast.success("Dispatch recommendation ready");
+    } catch {
+      toast.error("Failed to run recommendation");
+    }
+  };
 
   return (
     <div className="max-w-4xl space-y-6">
       <div>
         <h1 className="text-xl font-bold">Step 3 — Dispatch Decision</h1>
-        <p className="text-sm text-muted-foreground">Review requirements before dispatch. Decision engine logic will plug in here.</p>
+        <p className="text-sm text-muted-foreground">
+          Review incident classification and dispatch readiness.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -45,39 +78,82 @@ const DispatchDecision = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Dispatch Requirements</CardTitle>
+            <CardTitle className="text-base">Incident Classification</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div>
-              <span className="text-muted-foreground text-xs">Required Truck Type</span>
-              <p className="font-medium">{requiredTruckType?.name || "Not set"}</p>
-              {requiredTruckType?.description && (
-                <p className="text-xs text-muted-foreground">{requiredTruckType.description}</p>
-              )}
-            </div>
-            <div>
-              <span className="text-muted-foreground text-xs">Required Equipment</span>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {requiredEquipNames.length > 0 ? (
-                  requiredEquipNames.map((name) => (
-                    <Badge key={name} variant="secondary" className="text-xs">{name}</Badge>
-                  ))
-                ) : (
-                  <span className="text-xs text-muted-foreground">None specified</span>
-                )}
-              </div>
-            </div>
+            {classification ? (
+              <>
+                <div>
+                  <span className="text-muted-foreground text-xs">Required Truck Type</span>
+                  <p className="font-medium">{classifiedTruckType?.name || requiredTruckType?.name || "Not set"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Complexity</span>
+                  <p className="font-medium">{complexityLabels[classification.complexityLevel] || `Level ${classification.complexityLevel}`}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Required Equipment</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {requiredEquipNames.length > 0 ? (
+                      requiredEquipNames.map((name) => (
+                        <Badge key={name} variant="secondary" className="text-xs">{name}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">None specified</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-muted-foreground text-xs">No incident type selected on this job.</p>
+            )}
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2 border-dashed border-2">
-          <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground text-sm">
-              🔌 Dispatch Decision Engine will plug in here.
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Dispatch Readiness</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>
+              <span className="text-muted-foreground">Validation:</span>{" "}
+              {validationResult?.valid ? (
+                <Badge className="bg-success/15 text-success">Passed</Badge>
+              ) : (
+                <Badge className="bg-destructive/10 text-destructive">
+                  {validationResult?.missingFields.length ?? 0} fields missing
+                </Badge>
+              )}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              This module will analyze job requirements, driver availability, and optimal routing to make dispatch decisions.
+            <p>
+              <span className="text-muted-foreground">Eligible Trucks:</span>{" "}
+              <span className="font-mono font-medium">{eligibleTrucks.length}</span>
             </p>
+            <p>
+              <span className="text-muted-foreground">Eligible Drivers:</span>{" "}
+              <span className="font-mono font-medium">{rankedDrivers.length}</span>
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="py-6 flex flex-col items-center justify-center gap-3">
+            <Button
+              onClick={handleRunRecommendation}
+              disabled={
+                !validationResult?.valid ||
+                updateJob.isPending ||
+                isLoading
+              }
+              className="w-full"
+            >
+              Run Dispatch Recommendation
+            </Button>
+            {!validationResult?.valid && (
+              <p className="text-xs text-muted-foreground text-center">
+                Job must pass validation before running dispatch.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
