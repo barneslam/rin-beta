@@ -49,7 +49,7 @@ const DriverOffer = () => {
   const isEscalated = job?.job_status === "reassignment_required" && !pendingOffer && totalAttempts > 0;
 
   const createAutoAdvanceFn = useCallback(() => {
-    if (!drivers || !trucks || !incidentTypes || !truckTypesData) return undefined;
+    if (!drivers || !trucks || !incidentTypes || !truckTypesData || !job) return undefined;
     return async () => {
       const result = await autoDispatch.mutateAsync({
         jobId: job.job_id,
