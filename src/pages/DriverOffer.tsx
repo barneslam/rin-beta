@@ -31,18 +31,9 @@ const DriverOffer = () => {
   const autoDispatch = useAutoDispatchOffer();
   const navigate = useNavigate();
 
-  if (!job) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">No active job. Start from Incident Intake.</p>
-      </div>
-    );
-  }
+  const getDriver = useCallback((id: string) => drivers?.find((d) => d.driver_id === id), [drivers]);
+  const driverAssigned = !!job?.assigned_driver_id;
 
-  const getDriver = (id: string) => drivers?.find((d) => d.driver_id === id);
-  const driverAssigned = !!job.assigned_driver_id;
-
-  // Sort offers by created_at desc
   const sortedOffers = useMemo(() =>
     [...(offers ?? [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [offers]
@@ -55,7 +46,7 @@ const DriverOffer = () => {
   const currentWave = totalAttempts <= WAVE_SIZE ? 1 : 2;
   const waveAttempt = currentWave === 1 ? totalAttempts : totalAttempts - WAVE_SIZE;
 
-  const isEscalated = job.job_status === "reassignment_required" && !pendingOffer && totalAttempts > 0;
+  const isEscalated = job?.job_status === "reassignment_required" && !pendingOffer && totalAttempts > 0;
 
   const createAutoAdvanceFn = useCallback(() => {
     if (!drivers || !trucks || !incidentTypes || !truckTypesData) return undefined;
