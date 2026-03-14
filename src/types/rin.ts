@@ -44,6 +44,8 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   driver_offer_sent: "Offer Sent",
   driver_assigned: "Driver Assigned",
   driver_enroute: "Driver En Route",
+  driver_arrived: "Driver Arrived",
+  vehicle_loaded: "Vehicle Loaded",
   job_completed: "Job Completed",
   job_amended: "Job Amended",
 };
