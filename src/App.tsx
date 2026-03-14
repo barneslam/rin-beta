@@ -32,6 +32,7 @@ const App = () => (
             <Route path="/matching" element={<DriverMatching />} />
             <Route path="/offer" element={<DriverOffer />} />
             <Route path="/tracking" element={<JobTracking />} />
+            <Route path="/control-panel" element={<DispatchControlPanel />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppLayout>

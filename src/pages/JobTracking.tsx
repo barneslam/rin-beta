@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,9 +6,13 @@ import { useActiveJob } from "@/context/JobContext";
 import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { useAuditLogs, useDrivers } from "@/hooks/useReferenceData";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
-import type { JobStatus } from "@/types/rin";
+import type { JobStatus, Job } from "@/types/rin";
 import { toast } from "@/hooks/use-toast";
-import { Check } from "lucide-react";
+import { Check, Edit, RefreshCw, UserX, XCircle } from "lucide-react";
+import { AmendJobDialog } from "@/components/dispatch/AmendJobDialog";
+import { ReassignmentDialog } from "@/components/dispatch/ReassignmentDialog";
+import { DriverUnavailableDialog } from "@/components/dispatch/DriverUnavailableDialog";
+import { CancelJobDialog } from "@/components/dispatch/CancelJobDialog";
 
 const TRACKING_STAGES: JobStatus[] = [
   "driver_assigned",
@@ -17,12 +22,19 @@ const TRACKING_STAGES: JobStatus[] = [
   "job_completed",
 ];
 
+const OPERATIONAL_CONTROL_STATUSES = ["driver_assigned", "driver_enroute", "driver_arrived"];
+
 const JobTracking = () => {
   const { activeJobId } = useActiveJob();
   const { data: job } = useJob(activeJobId);
   const { data: auditLogs } = useAuditLogs(activeJobId ?? undefined);
   const { data: drivers } = useDrivers();
   const updateJob = useUpdateJob();
+
+  const [amendOpen, setAmendOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [unavailableOpen, setUnavailableOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   if (!job) {
     return (
@@ -34,6 +46,7 @@ const JobTracking = () => {
 
   const assignedDriver = drivers?.find((d) => d.driver_id === job.assigned_driver_id);
   const driverAssigned = !!job.assigned_driver_id;
+  const showControls = OPERATIONAL_CONTROL_STATUSES.includes(job.job_status);
 
   const currentStageIndex = TRACKING_STAGES.indexOf(job.job_status as JobStatus);
   const nextStage = currentStageIndex >= 0 && currentStageIndex < TRACKING_STAGES.length - 1
@@ -63,7 +76,7 @@ const JobTracking = () => {
         <p className="text-sm text-muted-foreground">Full job status and audit timeline.</p>
       </div>
 
-      {!driverAssigned ? (
+      {!driverAssigned && !["customer_reapproval_pending", "reassignment_required", "driver_unavailable", "cancelled_by_customer", "cancelled_after_dispatch"].includes(job.job_status) ? (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">Tracking begins once a driver offer is accepted.</p>
@@ -78,8 +91,8 @@ const JobTracking = () => {
                 <CardTitle className="text-base">Status</CardTitle>
               </CardHeader>
               <CardContent>
-                <Badge className={JOB_STATUS_COLORS[job.job_status] + " text-sm px-3 py-1"}>
-                  {JOB_STATUS_LABELS[job.job_status]}
+                <Badge className={`${JOB_STATUS_COLORS[job.job_status] ?? "bg-muted text-muted-foreground"} text-sm px-3 py-1`}>
+                  {JOB_STATUS_LABELS[job.job_status] ?? job.job_status}
                 </Badge>
               </CardContent>
             </Card>
@@ -126,7 +139,6 @@ const JobTracking = () => {
 
                   return (
                     <div key={stage} className="relative flex items-center gap-3">
-                      {/* Connector line */}
                       {i < TRACKING_STAGES.length - 1 && (
                         <div
                           className={`absolute left-[-20px] top-6 w-px h-8 ${
@@ -134,7 +146,6 @@ const JobTracking = () => {
                           }`}
                         />
                       )}
-                      {/* Circle */}
                       <div
                         className={`absolute left-[-24px] w-2.5 h-2.5 rounded-full border-2 flex items-center justify-center ${
                           isCompleted
@@ -177,6 +188,31 @@ const JobTracking = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Operational Controls */}
+          {showControls && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Operational Controls</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-3">
+                  <Button variant="outline" size="sm" onClick={() => setAmendOpen(true)}>
+                    <Edit className="h-4 w-4 mr-1.5" /> Amend Job
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setReassignOpen(true)}>
+                    <RefreshCw className="h-4 w-4 mr-1.5" /> Request Reassignment
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setUnavailableOpen(true)}>
+                    <UserX className="h-4 w-4 mr-1.5" /> Mark Driver Unavailable
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setCancelOpen(true)}>
+                    <XCircle className="h-4 w-4 mr-1.5" /> Cancel Job
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
 
@@ -214,6 +250,12 @@ const JobTracking = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialogs */}
+      <AmendJobDialog open={amendOpen} onOpenChange={setAmendOpen} job={job as Job} />
+      <ReassignmentDialog open={reassignOpen} onOpenChange={setReassignOpen} jobId={job.job_id} />
+      <DriverUnavailableDialog open={unavailableOpen} onOpenChange={setUnavailableOpen} jobId={job.job_id} />
+      <CancelJobDialog open={cancelOpen} onOpenChange={setCancelOpen} job={job as Job} />
     </div>
   );
 };
