@@ -117,6 +117,20 @@ export function useAutoDispatchOffer() {
       const currentWave = attemptCount < WAVE_SIZE ? 1 : 2;
       const waveAttempt = currentWave === 1 ? attemptCount + 1 : attemptCount - WAVE_SIZE + 1;
 
+      // Safety: abort if there's already a pending offer for this job
+      const activePending = (existingOffers ?? []).find((o) => o.offer_status === "pending");
+      if (activePending) {
+        return {
+          escalated: false,
+          offer: activePending,
+          wave: currentWave,
+          waveAttempt,
+          totalAttempts: attemptCount,
+          driverName: null,
+          alreadyPending: true,
+        };
+      }
+
       // Check if max attempts reached
       if (attemptCount >= WAVE_SIZE * MAX_WAVES) {
         return await escalateJob(jobId, job);
