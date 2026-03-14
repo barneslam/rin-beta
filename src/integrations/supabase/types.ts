@@ -120,6 +120,8 @@ export type Database = {
           created_at: string
           driver_id: string
           driver_name: string
+          gps_lat: number | null
+          gps_long: number | null
           phone: string | null
           rating: number | null
           reliability_score: number | null
@@ -133,6 +135,8 @@ export type Database = {
           created_at?: string
           driver_id?: string
           driver_name: string
+          gps_lat?: number | null
+          gps_long?: number | null
           phone?: string | null
           rating?: number | null
           reliability_score?: number | null
@@ -146,6 +150,8 @@ export type Database = {
           created_at?: string
           driver_id?: string
           driver_name?: string
+          gps_lat?: number | null
+          gps_long?: number | null
           phone?: string | null
           rating?: number | null
           reliability_score?: number | null
@@ -215,6 +221,8 @@ export type Database = {
           authorization_status: string | null
           can_vehicle_roll: boolean | null
           created_at: string
+          dispatch_attempt_count: number
+          dispatch_priority_score: number | null
           estimated_price: number | null
           eta_minutes: number | null
           gps_lat: number | null
@@ -239,6 +247,8 @@ export type Database = {
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
           created_at?: string
+          dispatch_attempt_count?: number
+          dispatch_priority_score?: number | null
           estimated_price?: number | null
           eta_minutes?: number | null
           gps_lat?: number | null
@@ -263,6 +273,8 @@ export type Database = {
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
           created_at?: string
+          dispatch_attempt_count?: number
+          dispatch_priority_score?: number | null
           estimated_price?: number | null
           eta_minutes?: number | null
           gps_lat?: number | null
@@ -573,6 +585,8 @@ export type Database = {
         | "driver_enroute"
         | "job_completed"
         | "job_amended"
+        | "dispatch_recommendation_ready"
+        | "driver_offer_prepared"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -722,6 +736,8 @@ export const Constants = {
         "driver_enroute",
         "job_completed",
         "job_amended",
+        "dispatch_recommendation_ready",
+        "driver_offer_prepared",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
