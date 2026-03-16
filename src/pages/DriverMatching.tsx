@@ -5,7 +5,7 @@ import { useActiveJob } from "@/context/JobContext";
 import { useDispatchRecommendation, useAutoDispatchOffer } from "@/hooks/useDispatchEngine";
 import { useDrivers, useTrucks, useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
 import { toast } from "sonner";
-import { AlertTriangle, Zap } from "lucide-react";
+import { AlertTriangle, Zap, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const DriverMatching = () => {
@@ -55,12 +55,23 @@ const DriverMatching = () => {
   };
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Step 5 — Driver Matching</h1>
-        <p className="text-sm text-muted-foreground">
-          Ranked drivers based on proximity, rating, reliability, and availability.
-        </p>
+    <div className="max-w-5xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Step 5 — Driver Matching</h1>
+          <p className="text-sm text-muted-foreground">
+            Ranked drivers based on ETA, distance, capability, reliability, and fairness.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={() => navigate(`/diagnostics/${job.job_id}`)}
+        >
+          <Search className="h-4 w-4" />
+          View Diagnostics
+        </Button>
       </div>
 
       {rankedDrivers.length > 0 && (
@@ -102,43 +113,50 @@ const DriverMatching = () => {
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {rankedDrivers.map(({ driver, truck, distanceKm, etaMinutes, score }, index) => (
-                <div key={driver.driver_id} className="flex items-center justify-between rounded border p-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono text-muted-foreground w-5">#{index + 1}</span>
-                    <div>
-                      <p className="font-medium text-sm">{driver.driver_name}</p>
-                      <p className="text-xs text-muted-foreground">{driver.company_name}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs">
-                    <div className="text-right">
-                      <p className="text-muted-foreground">Score</p>
-                      <p className="font-mono font-bold text-primary">{(score * 100).toFixed(0)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-muted-foreground">ETA</p>
-                      <p className="font-mono font-medium">{etaMinutes} min</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-muted-foreground">Distance</p>
-                      <p className="font-mono">{distanceKm.toFixed(1)} km</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-muted-foreground">Rating</p>
-                      <p className="font-medium">⭐ {Number(driver.rating).toFixed(1)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-muted-foreground">Reliability</p>
-                      <p className="font-mono">{Number(driver.reliability_score).toFixed(0)}%</p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      {getTruckTypeName(truck.truck_type_id)}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="text-left py-2 pr-3">#</th>
+                    <th className="text-left py-2 pr-3">Driver</th>
+                    <th className="text-right py-2 px-2">ETA</th>
+                    <th className="text-right py-2 px-2">Dist</th>
+                    <th className="text-right py-2 px-2">Cap</th>
+                    <th className="text-right py-2 px-2">Rel</th>
+                    <th className="text-right py-2 px-2">Fair</th>
+                    <th className="text-right py-2 px-2 font-bold">Score</th>
+                    <th className="text-right py-2 px-2">Info</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankedDrivers.map(({ driver, truck, distanceKm, etaMinutes, scoreBreakdown }, index) => (
+                    <tr key={driver.driver_id} className="border-b last:border-0">
+                      <td className="py-2 pr-3 font-mono text-muted-foreground">{index + 1}</td>
+                      <td className="py-2 pr-3">
+                        <p className="font-medium">{driver.driver_name}</p>
+                        <p className="text-xs text-muted-foreground">{driver.company_name}</p>
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono">{(scoreBreakdown.etaScore * 100).toFixed(0)}</td>
+                      <td className="text-right py-2 px-2 font-mono">{(scoreBreakdown.distanceScore * 100).toFixed(0)}</td>
+                      <td className="text-right py-2 px-2 font-mono">{(scoreBreakdown.capabilityScore * 100).toFixed(0)}</td>
+                      <td className="text-right py-2 px-2 font-mono">{(scoreBreakdown.reliabilityScore * 100).toFixed(0)}</td>
+                      <td className="text-right py-2 px-2 font-mono">{(scoreBreakdown.fairnessScore * 100).toFixed(0)}</td>
+                      <td className="text-right py-2 px-2 font-mono font-bold text-primary">
+                        {(scoreBreakdown.totalScore * 100).toFixed(0)}
+                      </td>
+                      <td className="text-right py-2 px-2">
+                        <div className="flex items-center justify-end gap-3 text-xs">
+                          <span className="font-mono">{etaMinutes}min</span>
+                          <span className="font-mono">{distanceKm.toFixed(1)}km</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {getTruckTypeName(truck.truck_type_id)}
+                          </Badge>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
