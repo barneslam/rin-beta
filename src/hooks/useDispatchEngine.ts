@@ -191,13 +191,15 @@ export function useAutoDispatchOffer() {
         .single();
       if (offerErr) throw offerErr;
 
-      // 8. Update job
+      // 8. Update job — set reservation + status
       await supabase
         .from("jobs")
         .update({
           job_status: "driver_offer_sent" as any,
           dispatch_attempt_count: attemptCount + 1,
-        })
+          reserved_driver_id: pick.driver.driver_id,
+          reservation_expires_at: expiresAt,
+        } as any)
         .eq("job_id", jobId);
 
       // 9. Create events

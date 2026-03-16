@@ -80,7 +80,7 @@ export function CancelJobDialog({ open, onOpenChange, job }: Props) {
                   Cancellation Fee: ${fee.toFixed(2)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  2% of estimated price (${Number(job.estimated_price ?? 0).toFixed(2)})
+                  {feeLabel} (of ${Number(job.estimated_price ?? 0).toFixed(2)})
                 </p>
               </div>
             )}
