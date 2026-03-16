@@ -43,6 +43,8 @@ export const JOB_STATUS_LABELS: Record<string, string> = {
   driver_offer_prepared: "Offer Prepared",
   driver_offer_sent: "Offer Sent",
   driver_assigned: "Driver Assigned",
+  payment_authorization_required: "Awaiting Payment Authorization",
+  payment_failed: "Payment Failed",
   driver_enroute: "Driver En Route",
   driver_arrived: "Driver Arrived",
   vehicle_loaded: "Vehicle Loaded",
