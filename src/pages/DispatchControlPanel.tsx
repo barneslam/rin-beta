@@ -54,9 +54,17 @@ const DispatchControlPanel = () => {
 
   const exceptionJobs = (jobs ?? []).filter((j) => EXCEPTION_STATUSES.includes(j.job_status));
 
-  const openJob = (jobId: string) => {
+  const getRouteForStatus = (status: string): string => {
+    if (["intake_started", "intake_completed", "validation_required", "ready_for_dispatch", "dispatch_recommendation_ready"].includes(status)) return "/dispatch";
+    if (["driver_offer_prepared", "driver_offer_sent"].includes(status)) return "/offer";
+    if (["driver_assigned", "driver_enroute", "driver_arrived", "vehicle_loaded", "job_completed"].includes(status)) return "/tracking";
+    if (EXCEPTION_STATUSES.includes(status)) return "/dispatch";
+    return "/tracking";
+  };
+
+  const openJob = (jobId: string, status: string) => {
     setActiveJobId(jobId);
-    navigate("/tracking");
+    navigate(getRouteForStatus(status));
   };
 
   const isException = (status: string) => EXCEPTION_STATUSES.includes(status);
@@ -95,19 +103,20 @@ const DispatchControlPanel = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-28">Job ID</TableHead>
-                    <TableHead>Incident</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="w-20">ETA</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-10"></TableHead>
+                     <TableHead className="w-28">Job ID</TableHead>
+                     <TableHead className="w-20">Source</TableHead>
+                     <TableHead>Incident</TableHead>
+                     <TableHead>Vehicle</TableHead>
+                     <TableHead>Driver</TableHead>
+                     <TableHead className="w-20">ETA</TableHead>
+                     <TableHead>Status</TableHead>
+                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredJobs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                       <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         No jobs in this category.
                       </TableCell>
                     </TableRow>
@@ -119,10 +128,15 @@ const DispatchControlPanel = () => {
                         <TableRow
                           key={job.job_id}
                           className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => openJob(job.job_id)}
+                          onClick={() => openJob(job.job_id, job.job_status)}
                         >
                           <TableCell className="font-mono text-xs">
                             {job.job_id.slice(0, 8)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={job.user_id ? "default" : "outline"} className="text-[10px]">
+                              {job.user_id ? "Customer" : "Dispatcher"}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-sm">
                             {incident?.incident_name ?? "—"}
@@ -192,7 +206,7 @@ const DispatchControlPanel = () => {
                         </span>
                       )}
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => openJob(job.job_id)}>
+                    <Button size="sm" variant="outline" onClick={() => openJob(job.job_id, job.job_status)}>
                       Open
                     </Button>
                   </div>
@@ -219,7 +233,7 @@ const DispatchControlPanel = () => {
                     <p className="text-sm">{evt.message}</p>
                     <span
                       className="text-xs text-primary cursor-pointer hover:underline"
-                      onClick={() => openJob(evt.job_id)}
+                      onClick={() => openJob(evt.job_id, evt.event_type ?? "intake_started")}
                     >
                       Job {evt.job_id?.slice(0, 8)}
                     </span>
