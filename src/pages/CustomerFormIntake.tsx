@@ -23,6 +23,7 @@ const COMMON_ISSUES = [
 export default function CustomerFormIntake() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
+  const autoDispatch = useAutoDispatchPipeline();
   const { data: incidentTypes } = useIncidentTypes();
 
   const [issue, setIssue] = useState("");
