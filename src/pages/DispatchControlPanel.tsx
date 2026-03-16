@@ -88,8 +88,9 @@ const DispatchControlPanel = () => {
             <TabsList className="mb-4">
               <TabsTrigger value="all">All Active</TabsTrigger>
               <TabsTrigger value="awaiting">Awaiting Driver</TabsTrigger>
+              <TabsTrigger value="payment">Payment</TabsTrigger>
               <TabsTrigger value="enroute">En Route</TabsTrigger>
-              <TabsTrigger value="arrived">Arrived</TabsTrigger>
+              <TabsTrigger value="arrived">On Site</TabsTrigger>
               <TabsTrigger value="exception">
                 Exception Queue
                 {exceptionJobs.length > 0 && (
