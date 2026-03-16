@@ -10,6 +10,7 @@ import Landing from "./pages/Landing";
 import GetHelpChoice from "./pages/GetHelpChoice";
 import CustomerChatIntake from "./pages/CustomerChatIntake";
 import CustomerFormIntake from "./pages/CustomerFormIntake";
+import CustomerVoiceIntake from "./pages/CustomerVoiceIntake";
 import CustomerTracking from "./pages/CustomerTracking";
 import CustomerPayment from "./pages/CustomerPayment";
 
