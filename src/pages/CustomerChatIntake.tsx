@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
+import { createCustomerUser } from "@/hooks/useCreateCustomerUser";
 import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
