@@ -109,16 +109,14 @@ export default function CustomerVoiceIntake() {
         return result;
       },
     },
-    onMessage: (message) => {
+    onMessage: (message: any) => {
       if (message.type === "user_transcript") {
-        const event = message as any;
-        const text = event.user_transcription_event?.user_transcript;
+        const text = message.user_transcription_event?.user_transcript;
         if (text) {
           setTranscript((prev) => [...prev, { role: "user", text }]);
         }
       } else if (message.type === "agent_response") {
-        const event = message as any;
-        const text = event.agent_response_event?.agent_response;
+        const text = message.agent_response_event?.agent_response;
         if (text) {
           setTranscript((prev) => [...prev, { role: "agent", text }]);
         }
