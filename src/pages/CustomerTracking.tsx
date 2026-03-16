@@ -6,11 +6,31 @@ import { Loader2, CheckCircle2, Truck, MapPin, Clock, User } from "lucide-react"
 
 const CUSTOMER_STEPS = [
   { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
-  { key: "finding", label: "Finding a Driver", statuses: ["ready_for_dispatch", "dispatch_recommendation_ready", "driver_offer_prepared", "driver_offer_sent"] },
+  {
+    key: "finding",
+    label: "Finding a Driver",
+    statuses: [
+      "ready_for_dispatch",
+      "dispatch_recommendation_ready",
+      "driver_offer_prepared",
+      "driver_offer_sent",
+      "reassignment_required",
+      "driver_unavailable",
+      "job_amended",
+      "customer_reapproval_pending",
+    ],
+  },
   { key: "enroute", label: "Driver On the Way", statuses: ["driver_assigned", "driver_enroute"] },
   { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived", "vehicle_loaded"] },
   { key: "done", label: "Complete", statuses: ["job_completed"] },
 ];
+
+const REASSIGNMENT_STATUSES = new Set([
+  "reassignment_required",
+  "driver_unavailable",
+  "job_amended",
+  "customer_reapproval_pending",
+]);
 
 function getActiveStep(status: string): number {
   const idx = CUSTOMER_STEPS.findIndex((s) => s.statuses.includes(status));
@@ -91,8 +111,10 @@ export default function CustomerTracking() {
           <h1 className="text-xl font-semibold text-sidebar-foreground">
             {isCancelled ? "Request Cancelled" : CUSTOMER_STEPS[activeStep]?.label || "Processing"}
           </h1>
-          <p className="text-sm text-sidebar-accent-foreground/60 font-mono">
-            {JOB_STATUS_LABELS[job.job_status] || job.job_status}
+          <p className="text-sm text-sidebar-accent-foreground/60">
+            {REASSIGNMENT_STATUSES.has(job.job_status)
+              ? "We're securing the next available driver"
+              : JOB_STATUS_LABELS[job.job_status] || job.job_status}
           </p>
         </div>
 
