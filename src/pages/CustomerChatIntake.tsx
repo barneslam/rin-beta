@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
+import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
