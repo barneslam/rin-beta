@@ -19,8 +19,38 @@ function getActiveStep(status: string): number {
 
 export default function CustomerTracking() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { data: job, isLoading } = useJob(jobId ?? null);
   const navigate = useNavigate();
+
+  // Poll every 5s so stepper auto-advances as dispatch progresses
+  const { data: job, isLoading } = useQuery({
+    queryKey: ["jobs", jobId],
+    enabled: !!jobId,
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("job_id", jobId!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch assigned driver name when available
+  const { data: assignedDriver } = useQuery({
+    queryKey: ["driver", job?.assigned_driver_id],
+    enabled: !!job?.assigned_driver_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("driver_name, phone")
+        .eq("driver_id", job!.assigned_driver_id!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   if (isLoading) {
     return (
