@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 
 interface JobContextType {
   activeJobId: string | null;
@@ -11,7 +11,19 @@ const JobContext = createContext<JobContextType>({
 });
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobIdState] = useState<string | null>(
+    () => sessionStorage.getItem("activeJobId") ?? null
+  );
+
+  const setActiveJobId = useCallback((id: string | null) => {
+    setActiveJobIdState(id);
+    if (id) {
+      sessionStorage.setItem("activeJobId", id);
+    } else {
+      sessionStorage.removeItem("activeJobId");
+    }
+  }, []);
+
   return (
     <JobContext.Provider value={{ activeJobId, setActiveJobId }}>
       {children}

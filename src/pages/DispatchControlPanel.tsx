@@ -54,9 +54,17 @@ const DispatchControlPanel = () => {
 
   const exceptionJobs = (jobs ?? []).filter((j) => EXCEPTION_STATUSES.includes(j.job_status));
 
-  const openJob = (jobId: string) => {
+  const getRouteForStatus = (status: string): string => {
+    if (["intake_started", "intake_completed", "validation_required", "ready_for_dispatch", "dispatch_recommendation_ready"].includes(status)) return "/dispatch";
+    if (["driver_offer_prepared", "driver_offer_sent"].includes(status)) return "/offer";
+    if (["driver_assigned", "driver_enroute", "driver_arrived", "vehicle_loaded", "job_completed"].includes(status)) return "/tracking";
+    if (EXCEPTION_STATUSES.includes(status)) return "/dispatch";
+    return "/tracking";
+  };
+
+  const openJob = (jobId: string, status: string) => {
     setActiveJobId(jobId);
-    navigate("/tracking");
+    navigate(getRouteForStatus(status));
   };
 
   const isException = (status: string) => EXCEPTION_STATUSES.includes(status);
