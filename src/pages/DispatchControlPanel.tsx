@@ -57,6 +57,7 @@ const DispatchControlPanel = () => {
   const getRouteForStatus = (status: string): string => {
     if (["intake_started", "intake_completed", "validation_required", "ready_for_dispatch", "dispatch_recommendation_ready"].includes(status)) return "/dispatch";
     if (["driver_offer_prepared", "driver_offer_sent"].includes(status)) return "/offer";
+    if (["payment_authorization_required", "payment_failed"].includes(status)) return "/dispatch";
     if (["driver_assigned", "driver_enroute", "driver_arrived", "vehicle_loaded", "job_completed"].includes(status)) return "/tracking";
     if (EXCEPTION_STATUSES.includes(status)) return "/dispatch";
     return "/tracking";

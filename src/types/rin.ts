@@ -66,6 +66,8 @@ export const JOB_STATUS_COLORS: Record<string, string> = {
   driver_offer_prepared: "bg-accent/25 text-accent-foreground",
   driver_offer_sent: "bg-accent/30 text-accent-foreground",
   driver_assigned: "bg-success/15 text-success",
+  payment_authorization_required: "bg-accent/35 text-accent-foreground",
+  payment_failed: "bg-destructive/20 text-destructive",
   driver_enroute: "bg-success/25 text-success",
   driver_arrived: "bg-success/30 text-success",
   vehicle_loaded: "bg-success/35 text-success",

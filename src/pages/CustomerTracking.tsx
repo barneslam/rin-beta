@@ -2,7 +2,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { JOB_STATUS_LABELS } from "@/types/rin";
-import { Loader2, CheckCircle2, Truck, MapPin, Clock, User } from "lucide-react";
+import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const CUSTOMER_STEPS = [
   { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
@@ -20,7 +21,12 @@ const CUSTOMER_STEPS = [
       "customer_reapproval_pending",
     ],
   },
-  { key: "enroute", label: "Driver On the Way", statuses: ["driver_assigned", "driver_enroute"] },
+  {
+    key: "payment",
+    label: "Authorize Payment",
+    statuses: ["payment_authorization_required", "payment_failed", "driver_assigned"],
+  },
+  { key: "enroute", label: "Driver On the Way", statuses: ["driver_enroute"] },
   { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived", "vehicle_loaded"] },
   { key: "done", label: "Complete", statuses: ["job_completed"] },
 ];
@@ -41,7 +47,6 @@ export default function CustomerTracking() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
 
-  // Poll every 5s so stepper auto-advances as dispatch progresses
   const { data: job, isLoading } = useQuery({
     queryKey: ["jobs", jobId],
     enabled: !!jobId,
@@ -57,7 +62,6 @@ export default function CustomerTracking() {
     },
   });
 
-  // Fetch assigned driver name when available
   const { data: assignedDriver } = useQuery({
     queryKey: ["driver", job?.assigned_driver_id],
     enabled: !!job?.assigned_driver_id,
@@ -93,6 +97,7 @@ export default function CustomerTracking() {
 
   const isCancelled = job.job_status.startsWith("cancelled");
   const activeStep = isCancelled ? -1 : getActiveStep(job.job_status);
+  const isPaymentStep = job.job_status === "payment_authorization_required" || job.job_status === "payment_failed";
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col px-6 py-8">
@@ -102,21 +107,49 @@ export default function CustomerTracking() {
           <div className="w-16 h-16 mx-auto rounded-full bg-primary/15 flex items-center justify-center">
             {isCancelled ? (
               <span className="text-2xl">✕</span>
-            ) : activeStep >= 2 ? (
+            ) : isPaymentStep ? (
+              <CreditCard className="w-7 h-7 text-primary" />
+            ) : activeStep >= 3 ? (
               <Truck className="w-7 h-7 text-primary" />
             ) : (
               <Clock className="w-7 h-7 text-primary" />
             )}
           </div>
           <h1 className="text-xl font-semibold text-sidebar-foreground">
-            {isCancelled ? "Request Cancelled" : CUSTOMER_STEPS[activeStep]?.label || "Processing"}
+            {isCancelled
+              ? "Request Cancelled"
+              : isPaymentStep
+              ? "Payment Authorization Required"
+              : CUSTOMER_STEPS[activeStep]?.label || "Processing"}
           </h1>
           <p className="text-sm text-sidebar-accent-foreground/60">
-            {REASSIGNMENT_STATUSES.has(job.job_status)
+            {isPaymentStep
+              ? "Please authorize payment so your driver can begin service"
+              : REASSIGNMENT_STATUSES.has(job.job_status)
               ? "We're securing the next available driver"
               : JOB_STATUS_LABELS[job.job_status] || job.job_status}
           </p>
         </div>
+
+        {/* Payment action */}
+        {isPaymentStep && (
+          <div className="space-y-3">
+            {job.job_status === "payment_failed" && (
+              <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 rounded-xl p-3">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <p>Previous authorization failed. Please try again with a different card.</p>
+              </div>
+            )}
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={() => navigate(`/pay/${job.job_id}`)}
+            >
+              <CreditCard className="w-4 h-4 mr-2" />
+              {job.job_status === "payment_failed" ? "Retry Payment" : "Complete Payment"}
+            </Button>
+          </div>
+        )}
 
         {/* ETA */}
         {job.eta_minutes && !isCancelled && (
