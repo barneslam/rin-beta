@@ -43,6 +43,7 @@ const App = () => (
           <Route path="/get-help/chat" element={<CustomerChatIntake />} />
           <Route path="/get-help/form" element={<CustomerFormIntake />} />
           <Route path="/track/:jobId" element={<CustomerTracking />} />
+          <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
 
           {/* Dispatcher routes — with sidebar */}
           <Route path="/intake" element={<DispatcherLayout><IncidentIntake /></DispatcherLayout>} />

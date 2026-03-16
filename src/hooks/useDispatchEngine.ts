@@ -211,6 +211,17 @@ export function useAutoDispatchOffer() {
         newValue: { driver_id: pick.driver.driver_id, wave: currentWave, attempt: waveAttempt },
       });
 
+      // 10. Fire-and-forget SMS notification to driver
+      supabase.functions
+        .invoke("send-driver-sms", {
+          body: { offerId: offer.offer_id, jobId, driverId: pick.driver.driver_id },
+        })
+        .then((res) => {
+          if (res.error) console.error("SMS send failed:", res.error);
+          else console.log("SMS sent to driver", pick.driver.driver_name);
+        })
+        .catch((err) => console.error("SMS invoke error:", err));
+
       return {
         escalated: false,
         offer,
