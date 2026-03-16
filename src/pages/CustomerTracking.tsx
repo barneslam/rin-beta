@@ -111,8 +111,10 @@ export default function CustomerTracking() {
           <h1 className="text-xl font-semibold text-sidebar-foreground">
             {isCancelled ? "Request Cancelled" : CUSTOMER_STEPS[activeStep]?.label || "Processing"}
           </h1>
-          <p className="text-sm text-sidebar-accent-foreground/60 font-mono">
-            {JOB_STATUS_LABELS[job.job_status] || job.job_status}
+          <p className="text-sm text-sidebar-accent-foreground/60">
+            {REASSIGNMENT_STATUSES.has(job.job_status)
+              ? "We're securing the next available driver"
+              : JOB_STATUS_LABELS[job.job_status] || job.job_status}
           </p>
         </div>
 
