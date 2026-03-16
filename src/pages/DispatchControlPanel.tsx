@@ -227,7 +227,7 @@ const DispatchControlPanel = () => {
                     <p className="text-sm">{evt.message}</p>
                     <span
                       className="text-xs text-primary cursor-pointer hover:underline"
-                      onClick={() => openJob(evt.job_id)}
+                      onClick={() => openJob(evt.job_id, evt.event_type ?? "intake_started")}
                     >
                       Job {evt.job_id?.slice(0, 8)}
                     </span>
