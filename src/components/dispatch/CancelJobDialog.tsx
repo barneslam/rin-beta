@@ -16,7 +16,7 @@ interface Props {
 const PRE_DISPATCH_STATUSES = [
   "intake_started", "intake_completed", "validation_required",
   "ready_for_dispatch", "dispatch_recommendation_ready",
-  "driver_offer_prepared", "driver_offer_sent", "driver_assigned",
+  "driver_offer_prepared", "driver_offer_sent",
 ];
 
 export function CancelJobDialog({ open, onOpenChange, job }: Props) {
@@ -25,9 +25,22 @@ export function CancelJobDialog({ open, onOpenChange, job }: Props) {
 
   const blocked = job.job_status === "vehicle_loaded" || job.job_status === "job_completed";
   const isPreDispatch = PRE_DISPATCH_STATUSES.includes(job.job_status);
-  const fee = !isPreDispatch && (job.job_status === "driver_enroute" || job.job_status === "driver_arrived")
-    ? Math.round((Number(job.estimated_price ?? 0)) * 0.02 * 100) / 100
-    : 0;
+  
+  let fee = 0;
+  let feeLabel = "";
+  if (!isPreDispatch) {
+    const price = Number(job.estimated_price ?? 0);
+    if (["driver_assigned", "payment_authorization_required", "payment_authorized", "payment_failed"].includes(job.job_status)) {
+      fee = Math.round(price * 0.01 * 100) / 100;
+      feeLabel = "1% — post-acceptance cancel";
+    } else if (job.job_status === "driver_enroute") {
+      fee = Math.round(price * 0.05 * 100) / 100;
+      feeLabel = "5% — driver en route cancel";
+    } else if (job.job_status === "driver_arrived" || job.job_status === "service_in_progress") {
+      fee = Math.round(price * 0.10 * 100) / 100;
+      feeLabel = "10% — late cancel";
+    }
+  }
 
   const handleConfirm = () => {
     if (!reason.trim()) return;
