@@ -59,6 +59,7 @@ const App = () => (
           <Route path="/offer" element={<DispatcherLayout><DriverOffer /></DispatcherLayout>} />
           <Route path="/tracking" element={<DispatcherLayout><JobTracking /></DispatcherLayout>} />
           <Route path="/control-panel" element={<DispatcherLayout><DispatchControlPanel /></DispatcherLayout>} />
+          <Route path="/diagnostics/:jobId" element={<DispatcherLayout><DispatchDiagnostics /></DispatcherLayout>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

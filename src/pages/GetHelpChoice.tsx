@@ -39,6 +39,20 @@ export default function GetHelpChoice() {
               <p className="text-sm text-sidebar-accent-foreground/70">Fill out a quick form</p>
             </div>
           </button>
+
+          {/* Tertiary: Call RIN */}
+          <button
+            onClick={() => navigate("/get-help/voice")}
+            className="w-full flex items-center gap-4 p-5 rounded-2xl border border-sidebar-border bg-sidebar-accent text-sidebar-foreground hover:bg-sidebar-accent/80 transition-all active:scale-[0.98]"
+          >
+            <div className="w-12 h-12 rounded-xl bg-sidebar-border flex items-center justify-center shrink-0">
+              <Phone className="w-6 h-6" />
+            </div>
+            <div className="text-left">
+              <p className="text-lg font-semibold">Call RIN</p>
+              <p className="text-sm text-sidebar-accent-foreground/70">Speak with our AI dispatcher</p>
+            </div>
+          </button>
         </div>
 
         <button
