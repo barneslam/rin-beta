@@ -32,7 +32,7 @@ export default function CustomerVoiceIntake() {
 
       try {
         const payload: IntakePayload = {
-          ...createBlankPayload(),
+          ...createBlankPayload("voice"),
           incident_description: (params.incident_description as string) || "",
           incident_type: (params.incident_type as string) || null,
           location_text: (params.location as string) || "",
