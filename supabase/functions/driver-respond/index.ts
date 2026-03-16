@@ -125,11 +125,11 @@ serve(async (req) => {
         .eq("job_id", offer.job_id)
         .single();
 
-      // Assign driver to job
+      // Assign driver to job — gate on payment authorization before active service
       await supabase.from("jobs").update({
         assigned_driver_id: offer.driver_id,
         assigned_truck_id: offer.truck_id,
-        job_status: "driver_assigned",
+        job_status: "payment_authorization_required",
       }).eq("job_id", offer.job_id);
 
       // Audit log
@@ -139,7 +139,7 @@ serve(async (req) => {
         event_type: "driver_assigned",
         event_source: "driver_sms",
         old_value: { job_status: currentJob?.job_status },
-        new_value: { job_status: "driver_assigned", assigned_driver_id: offer.driver_id },
+        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
       });
 
       // Job event
@@ -147,8 +147,8 @@ serve(async (req) => {
         job_id: offer.job_id,
         event_type: "driver_accepted",
         event_category: "dispatch",
-        message: `Driver ${driverName} accepted job offer`,
-        new_value: { job_status: "driver_assigned", assigned_driver_id: offer.driver_id },
+        message: `Driver ${driverName} accepted job offer — awaiting payment authorization`,
+        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
       });
 
       return new Response(JSON.stringify({ success: true, action: "accepted" }), {

@@ -11,6 +11,7 @@ import GetHelpChoice from "./pages/GetHelpChoice";
 import CustomerChatIntake from "./pages/CustomerChatIntake";
 import CustomerFormIntake from "./pages/CustomerFormIntake";
 import CustomerTracking from "./pages/CustomerTracking";
+import CustomerPayment from "./pages/CustomerPayment";
 
 // Dispatcher pages
 import IncidentIntake from "./pages/IncidentIntake";
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="/get-help/chat" element={<CustomerChatIntake />} />
           <Route path="/get-help/form" element={<CustomerFormIntake />} />
           <Route path="/track/:jobId" element={<CustomerTracking />} />
+          <Route path="/pay/:jobId" element={<CustomerPayment />} />
           <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
 
           {/* Dispatcher routes — with sidebar */}
