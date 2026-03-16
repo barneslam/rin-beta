@@ -147,8 +147,8 @@ serve(async (req) => {
         job_id: offer.job_id,
         event_type: "driver_accepted",
         event_category: "dispatch",
-        message: `Driver ${driverName} accepted job offer`,
-        new_value: { job_status: "driver_assigned", assigned_driver_id: offer.driver_id },
+        message: `Driver ${driverName} accepted job offer — awaiting payment authorization`,
+        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
       });
 
       return new Response(JSON.stringify({ success: true, action: "accepted" }), {
