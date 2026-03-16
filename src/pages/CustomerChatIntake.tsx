@@ -14,6 +14,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/roadside-cha
 export default function CustomerChatIntake() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
+  const autoDispatch = useAutoDispatchPipeline();
   const { data: incidentTypes } = useIncidentTypes();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
