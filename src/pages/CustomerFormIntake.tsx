@@ -83,6 +83,13 @@ export default function CustomerFormIntake() {
     setSubmitting(true);
     try {
       const incidentTypeId = matchIncidentType();
+      const userId = await createCustomerUser({
+        name: callerName || "Customer",
+        phone: callerPhone || undefined,
+        vehicleMake: vehicleMake || undefined,
+        vehicleModel: vehicleModel || undefined,
+        vehicleYear: vehicleYear ? parseInt(vehicleYear) : undefined,
+      });
       const job = await createJob.mutateAsync({
         job_status: "intake_started",
         pickup_location: location,
@@ -93,6 +100,7 @@ export default function CustomerFormIntake() {
         vehicle_year: vehicleYear ? parseInt(vehicleYear) : null,
         vehicle_condition: issue === "Other" ? otherIssue : issue,
         incident_type_id: incidentTypeId,
+        user_id: userId,
       });
       // Auto-dispatch: classify + send driver offer via existing pipeline
       try {

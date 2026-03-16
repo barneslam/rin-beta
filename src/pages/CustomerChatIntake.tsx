@@ -49,6 +49,13 @@ export default function CustomerChatIntake() {
     setJobCreated(true);
     try {
       const incidentTypeId = matchIncidentType(String(args.incident_description || ""));
+      const userId = await createCustomerUser({
+        name: args.caller_name ? String(args.caller_name) : "Customer",
+        phone: args.caller_phone ? String(args.caller_phone) : undefined,
+        vehicleMake: args.vehicle_make ? String(args.vehicle_make) : undefined,
+        vehicleModel: args.vehicle_model ? String(args.vehicle_model) : undefined,
+        vehicleYear: args.vehicle_year ? Number(args.vehicle_year) : undefined,
+      });
       const job = await createJob.mutateAsync({
         job_status: "intake_started",
         pickup_location: String(args.location || ""),
@@ -57,6 +64,7 @@ export default function CustomerChatIntake() {
         vehicle_year: args.vehicle_year ? Number(args.vehicle_year) : null,
         vehicle_condition: String(args.incident_description || ""),
         incident_type_id: incidentTypeId,
+        user_id: userId,
       });
       // Auto-dispatch: classify + send driver offer via existing pipeline
       try {
