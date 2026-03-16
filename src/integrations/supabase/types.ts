@@ -296,6 +296,7 @@ export type Database = {
           reassignment_reason: string | null
           required_equipment: Json | null
           required_truck_type_id: string | null
+          stripe_payment_intent_id: string | null
           updated_at: string
           user_id: string | null
           vehicle_condition: string | null
@@ -328,6 +329,7 @@ export type Database = {
           reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
+          stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
           vehicle_condition?: string | null
@@ -360,6 +362,7 @@ export type Database = {
           reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
+          stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
           vehicle_condition?: string | null
@@ -673,6 +676,8 @@ export type Database = {
         | "driver_unavailable"
         | "cancelled_by_customer"
         | "cancelled_after_dispatch"
+        | "payment_authorization_required"
+        | "payment_failed"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -836,6 +841,8 @@ export const Constants = {
         "driver_unavailable",
         "cancelled_by_customer",
         "cancelled_after_dispatch",
+        "payment_authorization_required",
+        "payment_failed",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
