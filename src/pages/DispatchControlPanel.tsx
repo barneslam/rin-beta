@@ -29,8 +29,9 @@ const COMPLETED_STATUSES: string[] = [
 const FILTER_MAP: Record<string, (status: string) => boolean> = {
   all: (s) => !COMPLETED_STATUSES.includes(s),
   awaiting: (s) => ["ready_for_dispatch", "dispatch_recommendation_ready", "driver_offer_prepared", "driver_offer_sent"].includes(s),
+  payment: (s) => ["payment_authorization_required", "payment_failed", "payment_authorized"].includes(s),
   enroute: (s) => s === "driver_enroute",
-  arrived: (s) => s === "driver_arrived",
+  arrived: (s) => ["driver_arrived", "service_in_progress"].includes(s),
   exception: (s) => EXCEPTION_STATUSES.includes(s),
   completed: (s) => COMPLETED_STATUSES.includes(s),
 };
