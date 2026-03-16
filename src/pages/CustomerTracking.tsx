@@ -1,7 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useJob } from "@/hooks/useJobs";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { JOB_STATUS_LABELS } from "@/types/rin";
-import { Loader2, CheckCircle2, Truck, MapPin, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, Truck, MapPin, Clock, User } from "lucide-react";
 
 const CUSTOMER_STEPS = [
   { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
@@ -18,8 +19,38 @@ function getActiveStep(status: string): number {
 
 export default function CustomerTracking() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { data: job, isLoading } = useJob(jobId ?? null);
   const navigate = useNavigate();
+
+  // Poll every 5s so stepper auto-advances as dispatch progresses
+  const { data: job, isLoading } = useQuery({
+    queryKey: ["jobs", jobId],
+    enabled: !!jobId,
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("job_id", jobId!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch assigned driver name when available
+  const { data: assignedDriver } = useQuery({
+    queryKey: ["driver", job?.assigned_driver_id],
+    enabled: !!job?.assigned_driver_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("driver_name, phone")
+        .eq("driver_id", job!.assigned_driver_id!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   if (isLoading) {
     return (
@@ -103,6 +134,20 @@ export default function CustomerTracking() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Assigned driver */}
+        {assignedDriver && (
+          <div className="bg-sidebar-accent rounded-2xl p-4 flex items-start gap-3">
+            <User className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs text-sidebar-accent-foreground/60">Your driver</p>
+              <p className="text-sm text-sidebar-foreground font-medium">{assignedDriver.driver_name}</p>
+              {assignedDriver.phone && (
+                <p className="text-xs text-sidebar-accent-foreground/60 mt-0.5">{assignedDriver.phone}</p>
+              )}
+            </div>
           </div>
         )}
 

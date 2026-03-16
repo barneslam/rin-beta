@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
+import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -13,6 +14,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/roadside-cha
 export default function CustomerChatIntake() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
+  const autoDispatch = useAutoDispatchPipeline();
   const { data: incidentTypes } = useIncidentTypes();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -55,7 +57,12 @@ export default function CustomerChatIntake() {
         vehicle_condition: String(args.incident_description || ""),
         incident_type_id: incidentTypeId,
       });
-      // Brief pause for the transition message
+      // Auto-dispatch: classify + send driver offer via existing pipeline
+      try {
+        await autoDispatch.mutateAsync(job.job_id);
+      } catch (e) {
+        console.warn("Auto-dispatch failed, job created but needs manual dispatch:", e);
+      }
       setTimeout(() => navigate(`/track/${job.job_id}`), 1500);
     } catch {
       toast.error("Something went wrong creating your request.");

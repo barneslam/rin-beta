@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
+import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { toast } from "sonner";
 
 const COMMON_ISSUES = [
@@ -22,6 +23,7 @@ const COMMON_ISSUES = [
 export default function CustomerFormIntake() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
+  const autoDispatch = useAutoDispatchPipeline();
   const { data: incidentTypes } = useIncidentTypes();
 
   const [issue, setIssue] = useState("");
@@ -91,6 +93,12 @@ export default function CustomerFormIntake() {
         vehicle_condition: issue === "Other" ? otherIssue : issue,
         incident_type_id: incidentTypeId,
       });
+      // Auto-dispatch: classify + send driver offer via existing pipeline
+      try {
+        await autoDispatch.mutateAsync(job.job_id);
+      } catch (e) {
+        console.warn("Auto-dispatch failed, job created but needs manual dispatch:", e);
+      }
       navigate(`/track/${job.job_id}`);
     } catch {
       toast.error("Something went wrong. Please try again.");
