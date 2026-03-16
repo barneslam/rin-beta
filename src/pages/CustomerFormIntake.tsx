@@ -6,11 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { createCustomerUser } from "@/hooks/useCreateCustomerUser";
 import { toast } from "sonner";
+import { createBlankPayload } from "@/types/intake";
+import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
 
 const COMMON_ISSUES = [
   { label: "Flat tire", keyword: "flat tire" },
@@ -38,6 +41,9 @@ export default function CustomerFormIntake() {
   const [vehicleYear, setVehicleYear] = useState("");
   const [callerName, setCallerName] = useState("");
   const [callerPhone, setCallerPhone] = useState("");
+  const [drivable, setDrivable] = useState<boolean | null>(null);
+  const [towRequired, setTowRequired] = useState(false);
+  const [destination, setDestination] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   function useMyLocation() {
@@ -61,48 +67,73 @@ export default function CustomerFormIntake() {
     );
   }
 
-  function matchIncidentType(): string | null {
-    if (!incidentTypes?.length) return null;
-    const keyword = COMMON_ISSUES.find((i) => i.label === issue)?.keyword || otherIssue;
-    if (!keyword) return null;
-    const lower = keyword.toLowerCase();
-    const match = incidentTypes.find(
-      (t) =>
-        t.incident_name.toLowerCase().includes(lower) ||
-        (t.description && t.description.toLowerCase().includes(lower))
-    );
-    return match?.incident_type_id ?? incidentTypes[0]?.incident_type_id ?? null;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!issue || !location) {
-      toast.error("Please tell us what happened and where you are");
+
+    const incidentDesc = issue === "Other" ? otherIssue : issue;
+
+    // Build canonical IntakePayload
+    const payload = {
+      ...createBlankPayload("form" as const),
+      incident_description: incidentDesc,
+      location_text: location,
+      location_lat: gpsLat,
+      location_lng: gpsLong,
+      location_confidence: gpsLat != null ? ("high" as const) : ("low" as const),
+      vehicle_make: vehicleMake,
+      vehicle_model: vehicleModel,
+      vehicle_year: vehicleYear ? parseInt(vehicleYear) : null,
+      drivable,
+      tow_required: towRequired,
+      destination_text: towRequired ? destination : null,
+      caller_name: callerName,
+      caller_phone: callerPhone,
+      field_confidence: {
+        location: gpsLat != null ? ("high" as const) : ("medium" as const),
+        incident: incidentDesc ? ("high" as const) : ("low" as const),
+        vehicle: vehicleMake ? ("high" as const) : ("low" as const),
+        drivable: drivable != null ? ("high" as const) : ("low" as const),
+      },
+    };
+
+    const result = await processIntakePayload(payload);
+
+    if (!result.ready) {
+      toast.error(`Please provide: ${result.missingFieldLabels.join(", ")}`);
       return;
     }
+
     setSubmitting(true);
     try {
-      const incidentTypeId = matchIncidentType();
+      const processed = result.payload;
+      const incidentTypeId = matchIncidentTypeId(
+        processed.incident_description,
+        incidentTypes || []
+      );
+
       const userId = await createCustomerUser({
-        name: callerName || "Customer",
-        phone: callerPhone || undefined,
-        vehicleMake: vehicleMake || undefined,
-        vehicleModel: vehicleModel || undefined,
-        vehicleYear: vehicleYear ? parseInt(vehicleYear) : undefined,
+        name: processed.caller_name || "Customer",
+        phone: processed.caller_phone || undefined,
+        vehicleMake: processed.vehicle_make || undefined,
+        vehicleModel: processed.vehicle_model || undefined,
+        vehicleYear: processed.vehicle_year ?? undefined,
       });
+
       const job = await createJob.mutateAsync({
         job_status: "intake_started",
-        pickup_location: location,
-        gps_lat: gpsLat,
-        gps_long: gpsLong,
-        vehicle_make: vehicleMake || null,
-        vehicle_model: vehicleModel || null,
-        vehicle_year: vehicleYear ? parseInt(vehicleYear) : null,
-        vehicle_condition: issue === "Other" ? otherIssue : issue,
+        pickup_location: processed.location_text,
+        gps_lat: processed.location_lat,
+        gps_long: processed.location_lng,
+        vehicle_make: processed.vehicle_make || null,
+        vehicle_model: processed.vehicle_model || null,
+        vehicle_year: processed.vehicle_year,
+        vehicle_condition: processed.incident_description,
+        can_vehicle_roll: processed.drivable,
         incident_type_id: incidentTypeId,
         user_id: userId,
-      });
-      // Auto-dispatch: classify + send driver offer via existing pipeline
+        language: processed.language,
+      } as any);
+
       try {
         await autoDispatch.mutateAsync(job.job_id);
       } catch (e) {
@@ -117,7 +148,6 @@ export default function CustomerFormIntake() {
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col">
-      {/* Header */}
       <div className="p-4 flex items-center gap-3">
         <button onClick={() => navigate("/get-help")} className="text-sidebar-accent-foreground/50 hover:text-sidebar-foreground transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -173,7 +203,7 @@ export default function CustomerFormIntake() {
 
         {/* Vehicle */}
         <div className="space-y-2">
-          <Label className="text-sidebar-foreground">Vehicle <span className="text-sidebar-accent-foreground/40">(optional)</span></Label>
+          <Label className="text-sidebar-foreground">Vehicle</Label>
           <div className="grid grid-cols-3 gap-2">
             <Input placeholder="Make" value={vehicleMake} onChange={(e) => setVehicleMake(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
             <Input placeholder="Model" value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
@@ -181,12 +211,48 @@ export default function CustomerFormIntake() {
           </div>
         </div>
 
+        {/* Drivable */}
+        <div className="space-y-3">
+          <Label className="text-sidebar-foreground">Can your vehicle still drive?</Label>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant={drivable === true ? "default" : "outline"}
+              onClick={() => { setDrivable(true); setTowRequired(false); }}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant={drivable === false ? "default" : "outline"}
+              onClick={() => { setDrivable(false); setTowRequired(true); }}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              No
+            </Button>
+          </div>
+        </div>
+
+        {/* Tow destination */}
+        {(towRequired || drivable === false) && (
+          <div className="space-y-2">
+            <Label className="text-sidebar-foreground">Where should we tow your vehicle?</Label>
+            <Input
+              placeholder="Mechanic, home address, etc."
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
+          </div>
+        )}
+
         {/* Contact */}
         <div className="space-y-2">
-          <Label className="text-sidebar-foreground">Your info <span className="text-sidebar-accent-foreground/40">(optional)</span></Label>
+          <Label className="text-sidebar-foreground">Your info</Label>
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Name" value={callerName} onChange={(e) => setCallerName(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
-            <Input placeholder="Phone" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
+            <Input placeholder="Phone *" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
           </div>
         </div>
 
