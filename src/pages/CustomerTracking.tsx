@@ -1,0 +1,122 @@
+import { useParams, useNavigate } from "react-router-dom";
+import { useJob } from "@/hooks/useJobs";
+import { JOB_STATUS_LABELS } from "@/types/rin";
+import { Loader2, CheckCircle2, Truck, MapPin, Clock } from "lucide-react";
+
+const CUSTOMER_STEPS = [
+  { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
+  { key: "finding", label: "Finding a Driver", statuses: ["ready_for_dispatch", "dispatch_recommendation_ready", "driver_offer_prepared", "driver_offer_sent"] },
+  { key: "enroute", label: "Driver On the Way", statuses: ["driver_assigned", "driver_enroute"] },
+  { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived", "vehicle_loaded"] },
+  { key: "done", label: "Complete", statuses: ["job_completed"] },
+];
+
+function getActiveStep(status: string): number {
+  const idx = CUSTOMER_STEPS.findIndex((s) => s.statuses.includes(status));
+  return idx >= 0 ? idx : 0;
+}
+
+export default function CustomerTracking() {
+  const { jobId } = useParams<{ jobId: string }>();
+  const { data: job, isLoading } = useJob(jobId ?? null);
+  const navigate = useNavigate();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-sidebar-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="min-h-screen bg-sidebar-background flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-lg text-sidebar-foreground font-semibold mb-2">Job not found</p>
+        <button onClick={() => navigate("/")} className="text-primary text-sm hover:underline">
+          Back to home
+        </button>
+      </div>
+    );
+  }
+
+  const isCancelled = job.job_status.startsWith("cancelled");
+  const activeStep = isCancelled ? -1 : getActiveStep(job.job_status);
+
+  return (
+    <div className="min-h-screen bg-sidebar-background flex flex-col px-6 py-8">
+      <div className="max-w-md mx-auto w-full space-y-8">
+        {/* Status header */}
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 mx-auto rounded-full bg-primary/15 flex items-center justify-center">
+            {isCancelled ? (
+              <span className="text-2xl">✕</span>
+            ) : activeStep >= 2 ? (
+              <Truck className="w-7 h-7 text-primary" />
+            ) : (
+              <Clock className="w-7 h-7 text-primary" />
+            )}
+          </div>
+          <h1 className="text-xl font-semibold text-sidebar-foreground">
+            {isCancelled ? "Request Cancelled" : CUSTOMER_STEPS[activeStep]?.label || "Processing"}
+          </h1>
+          <p className="text-sm text-sidebar-accent-foreground/60 font-mono">
+            {JOB_STATUS_LABELS[job.job_status] || job.job_status}
+          </p>
+        </div>
+
+        {/* ETA */}
+        {job.eta_minutes && !isCancelled && (
+          <div className="bg-sidebar-accent rounded-2xl p-4 text-center">
+            <p className="text-sm text-sidebar-accent-foreground/60">Estimated arrival</p>
+            <p className="text-3xl font-bold text-sidebar-foreground">{job.eta_minutes} min</p>
+          </div>
+        )}
+
+        {/* Progress stepper */}
+        {!isCancelled && (
+          <div className="space-y-0">
+            {CUSTOMER_STEPS.map((step, i) => {
+              const completed = i < activeStep;
+              const active = i === activeStep;
+              return (
+                <div key={step.key} className="flex items-start gap-3">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                        completed
+                          ? "bg-primary text-primary-foreground"
+                          : active
+                          ? "bg-primary/20 border-2 border-primary text-primary"
+                          : "bg-sidebar-border text-sidebar-accent-foreground/40"
+                      }`}
+                    >
+                      {completed ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-medium">{i + 1}</span>}
+                    </div>
+                    {i < CUSTOMER_STEPS.length - 1 && (
+                      <div className={`w-0.5 h-8 ${completed ? "bg-primary" : "bg-sidebar-border"}`} />
+                    )}
+                  </div>
+                  <p className={`pt-1.5 text-sm ${active ? "font-semibold text-sidebar-foreground" : completed ? "text-sidebar-foreground" : "text-sidebar-accent-foreground/40"}`}>
+                    {step.label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Location */}
+        {job.pickup_location && (
+          <div className="bg-sidebar-accent rounded-2xl p-4 flex items-start gap-3">
+            <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs text-sidebar-accent-foreground/60">Pickup location</p>
+              <p className="text-sm text-sidebar-foreground">{job.pickup_location}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
