@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useJob } from "@/hooks/useJobs";
 import { useDrivers, useTrucks, useIncidentTypes, useTruckTypes, useEquipment } from "@/hooks/useReferenceData";
@@ -17,6 +17,83 @@ import {
 import type { Driver, Truck, TruckType, Equipment } from "@/types/rin";
 
 // ---------------------------------------------------------------------------
+// Recent offer counts (for fairness scoring)
+// ---------------------------------------------------------------------------
+
+function useRecentOfferCounts() {
+  return useQuery({
+    queryKey: ["recent_offer_counts"],
+    queryFn: async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from("dispatch_offers")
+        .select("driver_id")
+        .gte("created_at", since);
+      const counts = new Map<string, number>();
+      (data ?? []).forEach((o) => {
+        counts.set(o.driver_id, (counts.get(o.driver_id) || 0) + 1);
+      });
+      return counts;
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Excluded driver IDs (reservations + pending offers on other jobs)
+// ---------------------------------------------------------------------------
+
+function useExcludedDriverIds(currentJobId: string | null) {
+  return useQuery({
+    queryKey: ["excluded_drivers", currentJobId],
+    queryFn: async () => {
+      const exclude = new Set<string>();
+
+      // Drivers with active reservations on other jobs
+      const { data: reservedJobs } = await supabase
+        .from("jobs")
+        .select("reserved_driver_id")
+        .not("reserved_driver_id", "is", null)
+        .gte("reservation_expires_at", new Date().toISOString());
+
+      (reservedJobs ?? []).forEach((j) => {
+        if (j.reserved_driver_id && (!currentJobId || true)) {
+          // We include all reserved drivers; the current job's reservation is fine to exclude
+          exclude.add(j.reserved_driver_id);
+        }
+      });
+
+      // Drivers with pending offers on other jobs
+      const { data: pendingOffers } = await supabase
+        .from("dispatch_offers")
+        .select("driver_id, job_id")
+        .eq("offer_status", "pending");
+
+      (pendingOffers ?? []).forEach((o) => {
+        if (o.job_id !== currentJobId) {
+          exclude.add(o.driver_id);
+        }
+      });
+
+      // Drivers with active assigned jobs
+      const { data: activeJobs } = await supabase
+        .from("jobs")
+        .select("assigned_driver_id")
+        .not("assigned_driver_id", "is", null)
+        .in("job_status", ["driver_assigned", "driver_enroute", "driver_arrived", "vehicle_loaded", "service_in_progress"] as any);
+
+      (activeJobs ?? []).forEach((j) => {
+        if (j.assigned_driver_id) exclude.add(j.assigned_driver_id);
+      });
+
+      return exclude;
+    },
+    enabled: !!currentJobId,
+    staleTime: 10_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch Recommendation (read-only ranking)
 // ---------------------------------------------------------------------------
 
@@ -27,6 +104,8 @@ export function useDispatchRecommendation(jobId: string | null) {
   const { data: incidentTypes, isLoading: incidentLoading } = useIncidentTypes();
   const { data: truckTypes } = useTruckTypes();
   const { data: equipment } = useEquipment();
+  const { data: recentOfferCounts } = useRecentOfferCounts();
+  const { data: excludedDriverIds } = useExcludedDriverIds(jobId);
 
   const isLoading = jobLoading || driversLoading || trucksLoading || incidentLoading;
 
@@ -51,8 +130,13 @@ export function useDispatchRecommendation(jobId: string | null) {
       : job;
 
     const eligibleTrucks = matchTruckCapability(effectiveJob, trucks);
-    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks);
-    const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks);
+    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks, 60, {
+      excludeDriverIds: excludedDriverIds,
+    });
+    const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks, {
+      recentOfferCounts: recentOfferCounts ?? new Map(),
+      requiredTruckTypeId: effectiveJob.required_truck_type_id ?? undefined,
+    });
 
     return {
       validationResult,
@@ -63,7 +147,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       truckTypes: (truckTypes ?? []) as TruckType[],
       equipment: (equipment ?? []) as Equipment[],
     };
-  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment]);
+  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment, recentOfferCounts, excludedDriverIds]);
 
   return { ...result, job, isLoading };
 }

@@ -22,12 +22,31 @@ export interface IncidentClassification {
   complexityLevel: number;
 }
 
+export interface DispatchScoreBreakdown {
+  etaScore: number;
+  distanceScore: number;
+  capabilityScore: number;
+  reliabilityScore: number;
+  fairnessScore: number;
+  totalScore: number;
+}
+
 export interface RankedDriver {
   driver: Driver;
   truck: Truck;
   distanceKm: number;
   etaMinutes: number;
   score: number;
+  scoreBreakdown: DispatchScoreBreakdown;
+}
+
+export interface RankOptions {
+  recentOfferCounts?: Map<string, number>;
+  requiredTruckTypeId?: string;
+}
+
+export interface FilterOptions {
+  excludeDriverIds?: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,8 +116,7 @@ export function matchTruckCapability(job: Job, trucks: Truck[]): Truck[] {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder: Haversine distance helper
-// Will be replaced with Google Maps routing API in a future phase.
+// Haversine distance helper
 // ---------------------------------------------------------------------------
 
 export function haversineDistanceKm(
@@ -107,7 +125,7 @@ export function haversineDistanceKm(
   lat2: number,
   lon2: number
 ): number {
-  const R = 6371; // Earth radius km
+  const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -130,19 +148,21 @@ export function filterEligibleDrivers(
   job: Job,
   drivers: Driver[],
   eligibleTrucks: Truck[],
-  minReliability = 60
+  minReliability = 60,
+  options?: FilterOptions
 ): Driver[] {
   const eligibleDriverIds = new Set(eligibleTrucks.map((t) => t.driver_id));
   const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
   const jobLat = hasJobCoordinates ? Number(job.gps_lat) : null;
   const jobLng = hasJobCoordinates ? Number(job.gps_long) : null;
+  const excludeIds = options?.excludeDriverIds;
 
   return drivers.filter((d) => {
+    if (excludeIds?.has(d.driver_id)) return false;
     if (!eligibleDriverIds.has(d.driver_id)) return false;
     if (d.availability_status !== "available") return false;
     if ((d.reliability_score ?? 0) < minReliability) return false;
 
-    // Fallback for customer-created jobs that only have a text location.
     if (!hasJobCoordinates || jobLat === null || jobLng === null) {
       return true;
     }
@@ -157,9 +177,7 @@ export function filterEligibleDrivers(
 }
 
 // ---------------------------------------------------------------------------
-// Module 5 — ETA Estimation (Placeholder)
-// Placeholder: distance / 0.8 km/min ≈ 48 km/h average urban speed
-// Will be replaced with Google Maps Directions API.
+// Module 5 — ETA Estimation
 // ---------------------------------------------------------------------------
 
 export function estimateETA(
@@ -173,35 +191,69 @@ export function estimateETA(
 }
 
 // ---------------------------------------------------------------------------
-// Module 6 — Dispatch Recommendation Engine
+// Module 6 — Dispatch Recommendation Engine (5-factor weighted)
 // ---------------------------------------------------------------------------
+
+// Weights
+const W_ETA = 0.30;
+const W_DISTANCE = 0.25;
+const W_CAPABILITY = 0.20;
+const W_RELIABILITY = 0.15;
+const W_FAIRNESS = 0.10;
+
+function computeCapabilityScore(
+  truck: Truck,
+  requiredTruckTypeId: string | undefined
+): number {
+  if (!requiredTruckTypeId) return 0.5;
+  return truck.truck_type_id === requiredTruckTypeId ? 1.0 : 0.5;
+}
+
+function computeFairnessScore(
+  driverId: string,
+  recentOfferCounts?: Map<string, number>
+): number {
+  if (!recentOfferCounts || recentOfferCounts.size === 0) return 0.5;
+  const count = recentOfferCounts.get(driverId) ?? 0;
+  const maxCount = Math.max(...recentOfferCounts.values(), 1);
+  return maxCount === 0 ? 1.0 : 1.0 - count / maxCount;
+}
 
 export function rankDrivers(
   eligibleDrivers: Driver[],
   job: Job,
-  eligibleTrucks: Truck[]
+  eligibleTrucks: Truck[],
+  options?: RankOptions
 ): RankedDriver[] {
   if (eligibleDrivers.length === 0) return [];
 
   const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
 
-  // Fallback ranking for customer-created jobs that only provide a text location.
+  // Fallback for jobs without GPS
   if (!hasJobCoordinates) {
     return eligibleDrivers
       .map((driver) => {
         const truck = eligibleTrucks.find((t) => t.driver_id === driver.driver_id)!;
-        const ratingScore = Number(driver.rating ?? 0) / 5;
         const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
-        const workloadScore = 0.5;
-        const score = 0.6 * ratingScore + 0.3 * reliabilityScore + 0.1 * workloadScore;
+        const capabilityScore = computeCapabilityScore(truck, options?.requiredTruckTypeId);
+        const fairnessScore = computeFairnessScore(driver.driver_id, options?.recentOfferCounts);
 
-        return {
-          driver,
-          truck,
-          distanceKm: 0,
-          etaMinutes: 0,
-          score,
+        const totalScore =
+          W_CAPABILITY * capabilityScore +
+          W_RELIABILITY * reliabilityScore +
+          W_FAIRNESS * fairnessScore +
+          (W_ETA + W_DISTANCE) * 0.5; // neutral for missing geo
+
+        const breakdown: DispatchScoreBreakdown = {
+          etaScore: 0.5,
+          distanceScore: 0.5,
+          capabilityScore,
+          reliabilityScore,
+          fairnessScore,
+          totalScore,
         };
+
+        return { driver, truck, distanceKm: 0, etaMinutes: 0, score: totalScore, scoreBreakdown: breakdown };
       })
       .sort((a, b) => b.score - a.score);
   }
@@ -219,21 +271,33 @@ export function rankDrivers(
   });
 
   const maxDistance = Math.max(...driverData.map((d) => d.distanceKm), 1);
+  const maxEta = Math.max(...driverData.map((d) => d.etaMinutes), 1);
 
   return driverData
     .map(({ driver, truck, distanceKm, etaMinutes }) => {
-      const proximityScore = 1 - distanceKm / maxDistance;
-      const ratingScore = Number(driver.rating ?? 0) / 5;
+      const etaScore = 1 - etaMinutes / maxEta;
+      const distanceScore = 1 - distanceKm / maxDistance;
+      const capabilityScore = computeCapabilityScore(truck, options?.requiredTruckTypeId);
       const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
-      const workloadScore = 0.5;
+      const fairnessScore = computeFairnessScore(driver.driver_id, options?.recentOfferCounts);
 
-      const score =
-        0.4 * proximityScore +
-        0.3 * ratingScore +
-        0.2 * reliabilityScore +
-        0.1 * workloadScore;
+      const totalScore =
+        W_ETA * etaScore +
+        W_DISTANCE * distanceScore +
+        W_CAPABILITY * capabilityScore +
+        W_RELIABILITY * reliabilityScore +
+        W_FAIRNESS * fairnessScore;
 
-      return { driver, truck, distanceKm, etaMinutes, score };
+      const breakdown: DispatchScoreBreakdown = {
+        etaScore,
+        distanceScore,
+        capabilityScore,
+        reliabilityScore,
+        fairnessScore,
+        totalScore,
+      };
+
+      return { driver, truck, distanceKm, etaMinutes, score: totalScore, scoreBreakdown: breakdown };
     })
     .sort((a, b) => b.score - a.score);
 }

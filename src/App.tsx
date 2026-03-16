@@ -10,6 +10,7 @@ import Landing from "./pages/Landing";
 import GetHelpChoice from "./pages/GetHelpChoice";
 import CustomerChatIntake from "./pages/CustomerChatIntake";
 import CustomerFormIntake from "./pages/CustomerFormIntake";
+import CustomerVoiceIntake from "./pages/CustomerVoiceIntake";
 import CustomerTracking from "./pages/CustomerTracking";
 import CustomerPayment from "./pages/CustomerPayment";
 
@@ -22,6 +23,7 @@ import DriverMatching from "./pages/DriverMatching";
 import DriverOffer from "./pages/DriverOffer";
 import JobTracking from "./pages/JobTracking";
 import DispatchControlPanel from "./pages/DispatchControlPanel";
+import DispatchDiagnostics from "./pages/DispatchDiagnostics";
 import DriverOfferPublic from "./pages/DriverOfferPublic";
 import NotFound from "./pages/NotFound";
 
@@ -43,6 +45,7 @@ const App = () => (
           <Route path="/get-help" element={<GetHelpChoice />} />
           <Route path="/get-help/chat" element={<CustomerChatIntake />} />
           <Route path="/get-help/form" element={<CustomerFormIntake />} />
+          <Route path="/get-help/voice" element={<CustomerVoiceIntake />} />
           <Route path="/track/:jobId" element={<CustomerTracking />} />
           <Route path="/pay/:jobId" element={<CustomerPayment />} />
           <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
@@ -56,6 +59,7 @@ const App = () => (
           <Route path="/offer" element={<DispatcherLayout><DriverOffer /></DispatcherLayout>} />
           <Route path="/tracking" element={<DispatcherLayout><JobTracking /></DispatcherLayout>} />
           <Route path="/control-panel" element={<DispatcherLayout><DispatchControlPanel /></DispatcherLayout>} />
+          <Route path="/diagnostics/:jobId" element={<DispatcherLayout><DispatchDiagnostics /></DispatcherLayout>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
