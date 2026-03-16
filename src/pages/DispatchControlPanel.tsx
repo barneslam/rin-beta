@@ -127,7 +127,7 @@ const DispatchControlPanel = () => {
                         <TableRow
                           key={job.job_id}
                           className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => openJob(job.job_id)}
+                          onClick={() => openJob(job.job_id, job.job_status)}
                         >
                           <TableCell className="font-mono text-xs">
                             {job.job_id.slice(0, 8)}
