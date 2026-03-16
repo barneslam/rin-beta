@@ -67,6 +67,7 @@ export type Database = {
           offer_id: string
           offer_status: Database["public"]["Enums"]["offer_status"]
           response_time: number | null
+          token: string | null
           truck_id: string | null
         }
         Insert: {
@@ -77,6 +78,7 @@ export type Database = {
           offer_id?: string
           offer_status?: Database["public"]["Enums"]["offer_status"]
           response_time?: number | null
+          token?: string | null
           truck_id?: string | null
         }
         Update: {
@@ -87,6 +89,7 @@ export type Database = {
           offer_id?: string
           offer_status?: Database["public"]["Enums"]["offer_status"]
           response_time?: number | null
+          token?: string | null
           truck_id?: string | null
         }
         Relationships: [
