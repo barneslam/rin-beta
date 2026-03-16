@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { MessageCircle, Keyboard, ArrowLeft } from "lucide-react";
+import { MessageCircle, Keyboard, Phone, ArrowLeft } from "lucide-react";
 
 export default function GetHelpChoice() {
   const navigate = useNavigate();
