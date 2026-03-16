@@ -122,6 +122,10 @@ export function haversineDistanceKm(
 // Module 4 — Driver Eligibility Filter
 // ---------------------------------------------------------------------------
 
+function hasUsableCoordinates(lat: number | null, lng: number | null): boolean {
+  return lat !== null && lng !== null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+}
+
 export function filterEligibleDrivers(
   job: Job,
   drivers: Driver[],
@@ -129,20 +133,24 @@ export function filterEligibleDrivers(
   minReliability = 60
 ): Driver[] {
   const eligibleDriverIds = new Set(eligibleTrucks.map((t) => t.driver_id));
-  const jobLat = Number(job.gps_lat);
-  const jobLng = Number(job.gps_long);
-
-  if (!jobLat || !jobLng) return [];
+  const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
+  const jobLat = hasJobCoordinates ? Number(job.gps_lat) : null;
+  const jobLng = hasJobCoordinates ? Number(job.gps_long) : null;
 
   return drivers.filter((d) => {
     if (!eligibleDriverIds.has(d.driver_id)) return false;
     if (d.availability_status !== "available") return false;
     if ((d.reliability_score ?? 0) < minReliability) return false;
 
-    const dLat = Number((d as any).gps_lat);
-    const dLng = Number((d as any).gps_long);
-    if (!dLat || !dLng) return false;
+    // Fallback for customer-created jobs that only have a text location.
+    if (!hasJobCoordinates || jobLat === null || jobLng === null) {
+      return true;
+    }
 
+    if (!hasUsableCoordinates(d.gps_lat, d.gps_long)) return false;
+
+    const dLat = Number(d.gps_lat);
+    const dLng = Number(d.gps_long);
     const distance = haversineDistanceKm(dLat, dLng, jobLat, jobLng);
     return distance <= Number(d.service_radius_km ?? 0);
   });
@@ -173,14 +181,37 @@ export function rankDrivers(
   job: Job,
   eligibleTrucks: Truck[]
 ): RankedDriver[] {
+  if (eligibleDrivers.length === 0) return [];
+
+  const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
+
+  // Fallback ranking for customer-created jobs that only provide a text location.
+  if (!hasJobCoordinates) {
+    return eligibleDrivers
+      .map((driver) => {
+        const truck = eligibleTrucks.find((t) => t.driver_id === driver.driver_id)!;
+        const ratingScore = Number(driver.rating ?? 0) / 5;
+        const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
+        const workloadScore = 0.5;
+        const score = 0.6 * ratingScore + 0.3 * reliabilityScore + 0.1 * workloadScore;
+
+        return {
+          driver,
+          truck,
+          distanceKm: 0,
+          etaMinutes: 0,
+          score,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
   const jobLat = Number(job.gps_lat);
   const jobLng = Number(job.gps_long);
-  if (!jobLat || !jobLng || eligibleDrivers.length === 0) return [];
 
-  // Calculate distances for normalization
   const driverData = eligibleDrivers.map((driver) => {
-    const dLat = Number((driver as any).gps_lat);
-    const dLng = Number((driver as any).gps_long);
+    const dLat = Number(driver.gps_lat);
+    const dLng = Number(driver.gps_long);
     const distanceKm = haversineDistanceKm(dLat, dLng, jobLat, jobLng);
     const etaMinutes = estimateETA(dLat, dLng, jobLat, jobLng);
     const truck = eligibleTrucks.find((t) => t.driver_id === driver.driver_id)!;
@@ -194,7 +225,6 @@ export function rankDrivers(
       const proximityScore = 1 - distanceKm / maxDistance;
       const ratingScore = Number(driver.rating ?? 0) / 5;
       const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
-      // Workload balance: flat 0.5 neutral — placeholder for future job-count-based balancing
       const workloadScore = 0.5;
 
       const score =
