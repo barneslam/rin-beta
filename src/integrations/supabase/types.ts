@@ -116,6 +116,54 @@ export type Database = {
           },
         ]
       }
+      driver_location_updates: {
+        Row: {
+          driver_id: string
+          heading: number | null
+          id: string
+          job_id: string
+          lat: number
+          lng: number
+          recorded_at: string | null
+          speed_kmh: number | null
+        }
+        Insert: {
+          driver_id: string
+          heading?: number | null
+          id?: string
+          job_id: string
+          lat: number
+          lng: number
+          recorded_at?: string | null
+          speed_kmh?: number | null
+        }
+        Update: {
+          driver_id?: string
+          heading?: number | null
+          id?: string
+          job_id?: string
+          lat?: number
+          lng?: number
+          recorded_at?: string | null
+          speed_kmh?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_location_updates_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["driver_id"]
+          },
+          {
+            foreignKeyName: "driver_location_updates_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["job_id"]
+          },
+        ]
+      }
       drivers: {
         Row: {
           availability_status: Database["public"]["Enums"]["driver_availability"]
@@ -278,6 +326,9 @@ export type Database = {
           authorization_status: string | null
           can_vehicle_roll: boolean | null
           cancellation_fee: number | null
+          cancellation_fee_amount: number | null
+          cancellation_fee_applicable: boolean | null
+          cancellation_fee_reason: string | null
           cancelled_by: string | null
           cancelled_reason: string | null
           created_at: string
@@ -296,6 +347,8 @@ export type Database = {
           reassignment_reason: string | null
           required_equipment: Json | null
           required_truck_type_id: string | null
+          reservation_expires_at: string | null
+          reserved_driver_id: string | null
           stripe_payment_intent_id: string | null
           updated_at: string
           user_id: string | null
@@ -311,6 +364,9 @@ export type Database = {
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
           cancellation_fee?: number | null
+          cancellation_fee_amount?: number | null
+          cancellation_fee_applicable?: boolean | null
+          cancellation_fee_reason?: string | null
           cancelled_by?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -329,6 +385,8 @@ export type Database = {
           reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
+          reservation_expires_at?: string | null
+          reserved_driver_id?: string | null
           stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -344,6 +402,9 @@ export type Database = {
           authorization_status?: string | null
           can_vehicle_roll?: boolean | null
           cancellation_fee?: number | null
+          cancellation_fee_amount?: number | null
+          cancellation_fee_applicable?: boolean | null
+          cancellation_fee_reason?: string | null
           cancelled_by?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -362,6 +423,8 @@ export type Database = {
           reassignment_reason?: string | null
           required_equipment?: Json | null
           required_truck_type_id?: string | null
+          reservation_expires_at?: string | null
+          reserved_driver_id?: string | null
           stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -678,6 +741,8 @@ export type Database = {
         | "cancelled_after_dispatch"
         | "payment_authorization_required"
         | "payment_failed"
+        | "service_in_progress"
+        | "payment_authorized"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -843,6 +908,8 @@ export const Constants = {
         "cancelled_after_dispatch",
         "payment_authorization_required",
         "payment_failed",
+        "service_in_progress",
+        "payment_authorized",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
