@@ -5,24 +5,31 @@ import { Button } from "@/components/ui/button";
 import { useActiveJob } from "@/context/JobContext";
 import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { useAuditLogs, useDrivers } from "@/hooks/useReferenceData";
+import { useDriverLocation } from "@/hooks/useDriverLocation";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus, Job } from "@/types/rin";
 import { toast } from "@/hooks/use-toast";
-import { Check, Edit, RefreshCw, UserX, XCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { Check, Edit, RefreshCw, UserX, XCircle, CreditCard, AlertTriangle, MapPin } from "lucide-react";
 import { AmendJobDialog } from "@/components/dispatch/AmendJobDialog";
 import { ReassignmentDialog } from "@/components/dispatch/ReassignmentDialog";
 import { DriverUnavailableDialog } from "@/components/dispatch/DriverUnavailableDialog";
 import { CancelJobDialog } from "@/components/dispatch/CancelJobDialog";
 
 const TRACKING_STAGES: JobStatus[] = [
-  "driver_assigned",
+  "payment_authorization_required",
+  "payment_authorized",
   "driver_enroute",
   "driver_arrived",
-  "vehicle_loaded",
+  "service_in_progress",
   "job_completed",
 ];
 
-const OPERATIONAL_CONTROL_STATUSES = ["driver_assigned", "driver_enroute", "driver_arrived"];
+const OPERATIONAL_CONTROL_STATUSES = [
+  "payment_authorized", "driver_assigned", "driver_enroute", "driver_arrived", "service_in_progress",
+];
+
+const STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 const JobTracking = () => {
   const { activeJobId } = useActiveJob();
@@ -35,6 +42,14 @@ const JobTracking = () => {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [unavailableOpen, setUnavailableOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  const isDriverActive = job && ["driver_enroute", "driver_arrived", "service_in_progress", "payment_authorized"].includes(job.job_status);
+  const { driverLocation, distanceKm, etaMinutes } = useDriverLocation(
+    isDriverActive ? activeJobId : null,
+    job?.gps_lat ? Number(job.gps_lat) : null,
+    job?.gps_long ? Number(job.gps_long) : null
+  );
 
   if (!job) {
     return (
@@ -53,6 +68,12 @@ const JobTracking = () => {
     ? TRACKING_STAGES[currentStageIndex + 1]
     : null;
 
+  // Stalled driver detection
+  const isStalled = job.job_status === "payment_authorized" &&
+    job.assigned_driver_id &&
+    job.updated_at &&
+    (Date.now() - new Date(job.updated_at).getTime()) > STALL_THRESHOLD_MS;
+
   const handleAdvanceStatus = () => {
     if (!nextStage) return;
     updateJob.mutate(
@@ -69,6 +90,25 @@ const JobTracking = () => {
     );
   };
 
+  const handleCapturePayment = async () => {
+    setCapturing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("capture-payment", {
+        body: { jobId: job.job_id },
+      });
+      if (error) throw error;
+      if (data?.success) {
+        toast({ title: "Payment Captured", description: "Funds have been captured successfully." });
+      } else {
+        toast({ title: "Capture Failed", description: data?.error || "Payment capture failed", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setCapturing(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl space-y-6">
       <div>
@@ -76,7 +116,7 @@ const JobTracking = () => {
         <p className="text-sm text-muted-foreground">Full job status and audit timeline.</p>
       </div>
 
-      {!driverAssigned && !["customer_reapproval_pending", "reassignment_required", "driver_unavailable", "cancelled_by_customer", "cancelled_after_dispatch"].includes(job.job_status) ? (
+      {!driverAssigned && !["customer_reapproval_pending", "reassignment_required", "driver_unavailable", "cancelled_by_customer", "cancelled_after_dispatch", "payment_authorization_required", "payment_failed"].includes(job.job_status) ? (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">Tracking begins once a driver offer is accepted.</p>
@@ -85,6 +125,30 @@ const JobTracking = () => {
         </Card>
       ) : (
         <>
+          {/* Stalled driver warning */}
+          {isStalled && (
+            <Card className="border-destructive/50">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <p className="text-sm font-medium">Driver Stalled — no movement to en route within 10 minutes</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Payment failed warning */}
+          {job.job_status === "payment_failed" && (
+            <Card className="border-destructive/50">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <p className="text-sm font-medium">Payment authorization failed — awaiting customer retry</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
               <CardHeader className="pb-3">
@@ -120,8 +184,14 @@ const JobTracking = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold font-mono">
-                  {job.eta_minutes ? `${job.eta_minutes} min` : "—"}
+                  {etaMinutes ? `${etaMinutes} min` : job.eta_minutes ? `${job.eta_minutes} min` : "—"}
                 </p>
+                {distanceKm != null && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3" />
+                    <span>{distanceKm} km away</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -184,7 +254,17 @@ const JobTracking = () => {
               )}
 
               {job.job_status === "job_completed" && (
-                <p className="mt-4 text-sm text-success font-medium">✅ Job completed.</p>
+                <div className="mt-4 space-y-3">
+                  <p className="text-sm text-success font-medium">✅ Job completed.</p>
+                  <Button
+                    size="sm"
+                    onClick={handleCapturePayment}
+                    disabled={capturing}
+                  >
+                    <CreditCard className="h-4 w-4 mr-1.5" />
+                    {capturing ? "Capturing…" : "Capture Payment"}
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>

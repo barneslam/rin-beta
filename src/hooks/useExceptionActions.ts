@@ -271,8 +271,29 @@ export function useMarkDriverUnavailable() {
 const PRE_DISPATCH_STATUSES = [
   "intake_started", "intake_completed", "validation_required",
   "ready_for_dispatch", "dispatch_recommendation_ready",
-  "driver_offer_prepared", "driver_offer_sent", "driver_assigned",
+  "driver_offer_prepared", "driver_offer_sent",
 ];
+
+const POST_ACCEPT_STATUSES = [
+  "driver_assigned", "payment_authorization_required", "payment_authorized", "payment_failed",
+];
+
+function getCancellationFee(status: string, estimatedPrice: number | null): { fee: number; applicable: boolean; reason: string } {
+  const price = Number(estimatedPrice ?? 0);
+  if (PRE_DISPATCH_STATUSES.includes(status)) {
+    return { fee: 0, applicable: false, reason: "pre_dispatch_cancel" };
+  }
+  if (POST_ACCEPT_STATUSES.includes(status)) {
+    return { fee: Math.round(price * 0.01 * 100) / 100, applicable: true, reason: "driver_assigned_cancel" };
+  }
+  if (status === "driver_enroute") {
+    return { fee: Math.round(price * 0.05 * 100) / 100, applicable: true, reason: "driver_enroute_cancel" };
+  }
+  if (status === "driver_arrived" || status === "service_in_progress") {
+    return { fee: Math.round(price * 0.10 * 100) / 100, applicable: true, reason: "late_cancel" };
+  }
+  return { fee: 0, applicable: false, reason: "unknown" };
+}
 
 export function useCancelJob() {
   const queryClient = useQueryClient();
@@ -299,14 +320,8 @@ export function useCancelJob() {
         throw new Error("Cancellation is not allowed after vehicle load or completion.");
       }
 
+      const { fee, applicable, reason: feeReason } = getCancellationFee(status, job.estimated_price);
       const isPreDispatch = PRE_DISPATCH_STATUSES.includes(status);
-      let fee = 0;
-      if (!isPreDispatch && (status === "driver_enroute" || status === "driver_arrived")) {
-        fee = job.estimated_price
-          ? Math.round(Number(job.estimated_price) * 0.02 * 100) / 100
-          : 0;
-      }
-
       const newStatus = isPreDispatch ? "cancelled_by_customer" : "cancelled_after_dispatch";
 
       const { data, error } = await supabase
@@ -316,6 +331,9 @@ export function useCancelJob() {
           cancellation_fee: fee,
           cancelled_reason: reason,
           cancelled_by: cancelledBy,
+          cancellation_fee_applicable: applicable,
+          cancellation_fee_amount: fee,
+          cancellation_fee_reason: feeReason,
         } as any)
         .eq("job_id", jobId)
         .select()

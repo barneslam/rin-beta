@@ -191,13 +191,15 @@ export function useAutoDispatchOffer() {
         .single();
       if (offerErr) throw offerErr;
 
-      // 8. Update job
+      // 8. Update job — set reservation + status
       await supabase
         .from("jobs")
         .update({
           job_status: "driver_offer_sent" as any,
           dispatch_attempt_count: attemptCount + 1,
-        })
+          reserved_driver_id: pick.driver.driver_id,
+          reservation_expires_at: expiresAt,
+        } as any)
         .eq("job_id", jobId);
 
       // 9. Create events
@@ -368,6 +370,12 @@ export function useDeclineDispatchOffer() {
         .eq("offer_id", offerId);
       if (error) throw error;
 
+      // Clear reservation
+      await supabase
+        .from("jobs")
+        .update({ reserved_driver_id: null, reservation_expires_at: null } as any)
+        .eq("job_id", jobId);
+
       await createAuditAndEvent(jobId, {
         auditActionType: `Offer declined by driver ${driverName || driverId.slice(0, 8)}`,
         auditEventType: "offer_responded",
@@ -419,6 +427,12 @@ export function useExpireDispatchOffer() {
         .update({ offer_status: "expired" as any })
         .eq("offer_id", offerId);
       if (error) throw error;
+
+      // Clear reservation
+      await supabase
+        .from("jobs")
+        .update({ reserved_driver_id: null, reservation_expires_at: null } as any)
+        .eq("job_id", jobId);
 
       await createAuditAndEvent(jobId, {
         auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)}`,
