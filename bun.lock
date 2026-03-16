@@ -33,6 +33,7 @@
         "@radix-ui/react-toggle": "^1.1.9",
         "@radix-ui/react-toggle-group": "^1.1.10",
         "@radix-ui/react-tooltip": "^1.2.7",
+        "@stripe/react-stripe-js": "^5.6.1",
         "@supabase/supabase-js": "^2.99.1",
         "@tanstack/react-query": "^5.83.0",
         "class-variance-authority": "^0.7.1",
@@ -347,6 +348,10 @@
     "@rollup/rollup-win32-ia32-msvc": ["@rollup/rollup-win32-ia32-msvc@4.24.0", "", { "os": "win32", "cpu": "ia32" }, "sha512-xrNcGDU0OxVcPTH/8n/ShH4UevZxKIO6HJFK0e15XItZP2UcaiLFd5kiX7hJnqCbSztUF8Qot+JWBC/QXRPYWQ=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.24.0", "", { "os": "win32", "cpu": "x64" }, "sha512-fbMkAF7fufku0N2dE5TBXcNlg0pt0cJue4xBRE2Qc5Vqikxr4VCgKj/ht6SMdFcOacVA9rqF70APJ8RN/4vMJw=="],
+
+    "@stripe/react-stripe-js": ["@stripe/react-stripe-js@5.6.1", "", { "dependencies": { "prop-types": "^15.7.2" }, "peerDependencies": { "@stripe/stripe-js": ">=8.0.0 <9.0.0", "react": ">=16.8.0 <20.0.0", "react-dom": ">=16.8.0 <20.0.0" } }, "sha512-5xBrjkGmFvKvpMod6VvpOaFaa67eRbmieKeFTePZyOr/sUXzm7A3YY91l330pS0usUst5PxTZDUZHWfOc0v1GA=="],
+
+    "@stripe/stripe-js": ["@stripe/stripe-js@8.9.0", "", {}, "sha512-OJkXvUI5GAc56QdiSRimQDvWYEqn475J+oj8RzRtFTCPtkJNO2TWW619oDY+nn1ExR+2tCVTQuRQBbR4dRugww=="],
 
     "@supabase/auth-js": ["@supabase/auth-js@2.99.1", "", { "dependencies": { "tslib": "2.8.1" } }, "sha512-x7lKKTvKjABJt/FYcRSPiTT01Xhm2FF8RhfL8+RHMkmlwmRQ88/lREupIHKwFPW0W6pTCJqkZb7Yhpw/EZ+fNw=="],
 
