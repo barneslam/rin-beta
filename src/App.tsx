@@ -11,6 +11,7 @@ import GetHelpChoice from "./pages/GetHelpChoice";
 import CustomerChatIntake from "./pages/CustomerChatIntake";
 import CustomerFormIntake from "./pages/CustomerFormIntake";
 import CustomerTracking from "./pages/CustomerTracking";
+import CustomerPayment from "./pages/CustomerPayment";
 
 // Dispatcher pages
 import IncidentIntake from "./pages/IncidentIntake";
