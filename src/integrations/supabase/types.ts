@@ -342,6 +342,7 @@ export type Database = {
           incident_type_id: string | null
           job_id: string
           job_status: Database["public"]["Enums"]["job_status"]
+          language: string | null
           location_type: string | null
           pickup_location: string | null
           reassignment_reason: string | null
@@ -380,6 +381,7 @@ export type Database = {
           incident_type_id?: string | null
           job_id?: string
           job_status?: Database["public"]["Enums"]["job_status"]
+          language?: string | null
           location_type?: string | null
           pickup_location?: string | null
           reassignment_reason?: string | null
@@ -418,6 +420,7 @@ export type Database = {
           incident_type_id?: string | null
           job_id?: string
           job_status?: Database["public"]["Enums"]["job_status"]
+          language?: string | null
           location_type?: string | null
           pickup_location?: string | null
           reassignment_reason?: string | null
