@@ -122,6 +122,10 @@ export function haversineDistanceKm(
 // Module 4 — Driver Eligibility Filter
 // ---------------------------------------------------------------------------
 
+function hasUsableCoordinates(lat: number | null, lng: number | null): boolean {
+  return lat !== null && lng !== null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+}
+
 export function filterEligibleDrivers(
   job: Job,
   drivers: Driver[],
@@ -129,20 +133,24 @@ export function filterEligibleDrivers(
   minReliability = 60
 ): Driver[] {
   const eligibleDriverIds = new Set(eligibleTrucks.map((t) => t.driver_id));
-  const jobLat = Number(job.gps_lat);
-  const jobLng = Number(job.gps_long);
-
-  if (!jobLat || !jobLng) return [];
+  const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
+  const jobLat = hasJobCoordinates ? Number(job.gps_lat) : null;
+  const jobLng = hasJobCoordinates ? Number(job.gps_long) : null;
 
   return drivers.filter((d) => {
     if (!eligibleDriverIds.has(d.driver_id)) return false;
     if (d.availability_status !== "available") return false;
     if ((d.reliability_score ?? 0) < minReliability) return false;
 
-    const dLat = Number((d as any).gps_lat);
-    const dLng = Number((d as any).gps_long);
-    if (!dLat || !dLng) return false;
+    // Fallback for customer-created jobs that only have a text location.
+    if (!hasJobCoordinates || jobLat === null || jobLng === null) {
+      return true;
+    }
 
+    if (!hasUsableCoordinates(d.gps_lat, d.gps_long)) return false;
+
+    const dLat = Number(d.gps_lat);
+    const dLng = Number(d.gps_long);
     const distance = haversineDistanceKm(dLat, dLng, jobLat, jobLng);
     return distance <= Number(d.service_radius_km ?? 0);
   });
