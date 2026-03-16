@@ -21,6 +21,7 @@ import DriverMatching from "./pages/DriverMatching";
 import DriverOffer from "./pages/DriverOffer";
 import JobTracking from "./pages/JobTracking";
 import DispatchControlPanel from "./pages/DispatchControlPanel";
+import DriverOfferPublic from "./pages/DriverOfferPublic";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
