@@ -7,6 +7,9 @@ import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { createCustomerUser } from "@/hooks/useCreateCustomerUser";
 import { toast } from "sonner";
+import type { IntakePayload } from "@/types/intake";
+import { createBlankPayload } from "@/types/intake";
+import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -27,46 +30,82 @@ export default function CustomerChatIntake() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send initial greeting on mount
   useEffect(() => {
     sendToAI([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function matchIncidentType(description: string): string | null {
-    if (!incidentTypes?.length) return null;
-    const lower = description.toLowerCase();
-    const match = incidentTypes.find(
-      (t) =>
-        t.incident_name.toLowerCase().includes(lower) ||
-        lower.includes(t.incident_name.toLowerCase()) ||
-        (t.description && (t.description.toLowerCase().includes(lower) || lower.includes(t.description.toLowerCase())))
-    );
-    return match?.incident_type_id ?? incidentTypes[0]?.incident_type_id ?? null;
-  }
-
   async function handleToolCall(args: Record<string, unknown>) {
+    // Build canonical IntakePayload from AI tool call
+    const payload: IntakePayload = {
+      ...createBlankPayload("chat"),
+      incident_description: String(args.incident_description || ""),
+      location_text: String(args.location || ""),
+      vehicle_make: args.vehicle_make ? String(args.vehicle_make) : "",
+      vehicle_model: args.vehicle_model ? String(args.vehicle_model) : "",
+      vehicle_year: args.vehicle_year ? Number(args.vehicle_year) : null,
+      drivable: args.drivable != null ? Boolean(args.drivable) : null,
+      tow_required: args.tow_required != null ? Boolean(args.tow_required) : null,
+      destination_text: args.destination ? String(args.destination) : null,
+      caller_name: args.caller_name ? String(args.caller_name) : "",
+      caller_phone: args.caller_phone ? String(args.caller_phone) : "",
+      language: args.language ? String(args.language) : "en",
+      field_confidence: {
+        incident: "high",
+        location: args.location ? "medium" : "low",
+        vehicle: args.vehicle_make ? "high" : "low",
+        drivable: args.drivable != null ? "high" : "low",
+      },
+    };
+
+    // Process: geocode + validate
+    const result = await processIntakePayload(payload);
+
+    if (!result.ready) {
+      // Missing fields — ask AI to follow up instead of creating the job
+      const missingLabels = result.missingFieldLabels.join(", ");
+      const followUpMsg: Msg = {
+        role: "user",
+        content: `[System: The following information is still needed before we can create the request: ${missingLabels}. Please ask the caller for these details.]`,
+      };
+      const updatedMessages = [...messages, followUpMsg];
+      // Don't show system message to user, just send to AI
+      await sendToAI(updatedMessages);
+      return;
+    }
+
+    // Payload is ready — create the job
     setJobCreated(true);
     try {
-      const incidentTypeId = matchIncidentType(String(args.incident_description || ""));
+      const processed = result.payload;
+      const incidentTypeId = matchIncidentTypeId(
+        processed.incident_description,
+        incidentTypes || []
+      );
+
       const userId = await createCustomerUser({
-        name: args.caller_name ? String(args.caller_name) : "Customer",
-        phone: args.caller_phone ? String(args.caller_phone) : undefined,
-        vehicleMake: args.vehicle_make ? String(args.vehicle_make) : undefined,
-        vehicleModel: args.vehicle_model ? String(args.vehicle_model) : undefined,
-        vehicleYear: args.vehicle_year ? Number(args.vehicle_year) : undefined,
+        name: processed.caller_name || "Customer",
+        phone: processed.caller_phone || undefined,
+        vehicleMake: processed.vehicle_make || undefined,
+        vehicleModel: processed.vehicle_model || undefined,
+        vehicleYear: processed.vehicle_year ?? undefined,
       });
+
       const job = await createJob.mutateAsync({
         job_status: "intake_started",
-        pickup_location: String(args.location || ""),
-        vehicle_make: args.vehicle_make ? String(args.vehicle_make) : null,
-        vehicle_model: args.vehicle_model ? String(args.vehicle_model) : null,
-        vehicle_year: args.vehicle_year ? Number(args.vehicle_year) : null,
-        vehicle_condition: String(args.incident_description || ""),
+        pickup_location: processed.location_text,
+        gps_lat: processed.location_lat,
+        gps_long: processed.location_lng,
+        vehicle_make: processed.vehicle_make || null,
+        vehicle_model: processed.vehicle_model || null,
+        vehicle_year: processed.vehicle_year,
+        vehicle_condition: processed.incident_description,
+        can_vehicle_roll: processed.drivable,
         incident_type_id: incidentTypeId,
         user_id: userId,
-      });
-      // Auto-dispatch: classify + send driver offer via existing pipeline
+        language: processed.language,
+      } as any);
+
       try {
         await autoDispatch.mutateAsync(job.job_id);
       } catch (e) {
@@ -146,11 +185,9 @@ export default function CustomerChatIntake() {
             const parsed = JSON.parse(jsonStr);
             const choice = parsed.choices?.[0];
 
-            // Check for tool calls
             const toolCall = choice?.delta?.tool_calls?.[0];
             if (toolCall?.function?.arguments) {
-              // Accumulate tool call arguments
-              assistantSoFar = ""; // Don't show tool call text
+              assistantSoFar = "";
               try {
                 const args = JSON.parse(toolCall.function.arguments);
                 if (toolCall.function.name === "create_roadside_job" || Object.keys(args).includes("incident_description")) {
@@ -164,9 +201,7 @@ export default function CustomerChatIntake() {
               }
             }
 
-            // Check for finish_reason with tool_calls
             if (choice?.finish_reason === "tool_calls") {
-              // The complete tool call should have been handled above
               continue;
             }
 
@@ -222,7 +257,6 @@ export default function CustomerChatIntake() {
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col">
-      {/* Header */}
       <div className="p-4 flex items-center gap-3 border-b border-sidebar-border shrink-0">
         <button onClick={() => navigate("/get-help")} className="text-sidebar-accent-foreground/50 hover:text-sidebar-foreground transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -233,7 +267,6 @@ export default function CustomerChatIntake() {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -264,7 +297,6 @@ export default function CustomerChatIntake() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="p-4 border-t border-sidebar-border shrink-0">
         <div className="flex gap-2 max-w-md mx-auto">
           <input
