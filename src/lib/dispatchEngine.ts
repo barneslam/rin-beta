@@ -181,14 +181,37 @@ export function rankDrivers(
   job: Job,
   eligibleTrucks: Truck[]
 ): RankedDriver[] {
+  if (eligibleDrivers.length === 0) return [];
+
+  const hasJobCoordinates = hasUsableCoordinates(job.gps_lat, job.gps_long);
+
+  // Fallback ranking for customer-created jobs that only provide a text location.
+  if (!hasJobCoordinates) {
+    return eligibleDrivers
+      .map((driver) => {
+        const truck = eligibleTrucks.find((t) => t.driver_id === driver.driver_id)!;
+        const ratingScore = Number(driver.rating ?? 0) / 5;
+        const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
+        const workloadScore = 0.5;
+        const score = 0.6 * ratingScore + 0.3 * reliabilityScore + 0.1 * workloadScore;
+
+        return {
+          driver,
+          truck,
+          distanceKm: 0,
+          etaMinutes: 0,
+          score,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
   const jobLat = Number(job.gps_lat);
   const jobLng = Number(job.gps_long);
-  if (!jobLat || !jobLng || eligibleDrivers.length === 0) return [];
 
-  // Calculate distances for normalization
   const driverData = eligibleDrivers.map((driver) => {
-    const dLat = Number((driver as any).gps_lat);
-    const dLng = Number((driver as any).gps_long);
+    const dLat = Number(driver.gps_lat);
+    const dLng = Number(driver.gps_long);
     const distanceKm = haversineDistanceKm(dLat, dLng, jobLat, jobLng);
     const etaMinutes = estimateETA(dLat, dLng, jobLat, jobLng);
     const truck = eligibleTrucks.find((t) => t.driver_id === driver.driver_id)!;
@@ -202,7 +225,6 @@ export function rankDrivers(
       const proximityScore = 1 - distanceKm / maxDistance;
       const ratingScore = Number(driver.rating ?? 0) / 5;
       const reliabilityScore = Number(driver.reliability_score ?? 0) / 100;
-      // Workload balance: flat 0.5 neutral — placeholder for future job-count-based balancing
       const workloadScore = 0.5;
 
       const score =
