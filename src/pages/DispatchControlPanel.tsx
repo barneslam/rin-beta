@@ -200,7 +200,7 @@ const DispatchControlPanel = () => {
                         </span>
                       )}
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => openJob(job.job_id)}>
+                    <Button size="sm" variant="outline" onClick={() => openJob(job.job_id, job.job_status)}>
                       Open
                     </Button>
                   </div>
