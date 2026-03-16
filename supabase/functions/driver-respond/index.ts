@@ -139,7 +139,7 @@ serve(async (req) => {
         event_type: "driver_assigned",
         event_source: "driver_sms",
         old_value: { job_status: currentJob?.job_status },
-        new_value: { job_status: "driver_assigned", assigned_driver_id: offer.driver_id },
+        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
       });
 
       // Job event
