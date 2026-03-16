@@ -428,6 +428,12 @@ export function useExpireDispatchOffer() {
         .eq("offer_id", offerId);
       if (error) throw error;
 
+      // Clear reservation
+      await supabase
+        .from("jobs")
+        .update({ reserved_driver_id: null, reservation_expires_at: null } as any)
+        .eq("job_id", jobId);
+
       await createAuditAndEvent(jobId, {
         auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)}`,
         auditEventType: "offer_responded",
