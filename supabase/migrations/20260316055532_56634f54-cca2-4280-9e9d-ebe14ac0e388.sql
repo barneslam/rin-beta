@@ -1,0 +1,1 @@
+ALTER TABLE public.dispatch_offers ADD COLUMN token text DEFAULT gen_random_uuid()::text;
