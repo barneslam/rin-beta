@@ -53,7 +53,7 @@ export default function CustomerVoiceIntake() {
           return `Missing required information: ${processed.missingFields.join(", ")}. Please ask the customer for these details.`;
         }
 
-        const user = await createCustomerUser({
+        const userId = await createCustomerUser({
           name: processed.payload.caller_name,
           phone: processed.payload.caller_phone,
         });
@@ -73,7 +73,7 @@ export default function CustomerVoiceIntake() {
           can_vehicle_roll: processed.payload.drivable,
           incident_type_id: incidentTypeId,
           language: processed.payload.language,
-          user_id: user.user_id,
+          user_id: userId,
           job_status: "intake_completed",
           location_type: processed.payload.location_type,
         };
