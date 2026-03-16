@@ -93,6 +93,12 @@ export default function CustomerFormIntake() {
         vehicle_condition: issue === "Other" ? otherIssue : issue,
         incident_type_id: incidentTypeId,
       });
+      // Auto-dispatch: classify + send driver offer via existing pipeline
+      try {
+        await autoDispatch.mutateAsync(job.job_id);
+      } catch (e) {
+        console.warn("Auto-dispatch failed, job created but needs manual dispatch:", e);
+      }
       navigate(`/track/${job.job_id}`);
     } catch {
       toast.error("Something went wrong. Please try again.");

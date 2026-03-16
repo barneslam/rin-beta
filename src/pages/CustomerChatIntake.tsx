@@ -57,7 +57,12 @@ export default function CustomerChatIntake() {
         vehicle_condition: String(args.incident_description || ""),
         incident_type_id: incidentTypeId,
       });
-      // Brief pause for the transition message
+      // Auto-dispatch: classify + send driver offer via existing pipeline
+      try {
+        await autoDispatch.mutateAsync(job.job_id);
+      } catch (e) {
+        console.warn("Auto-dispatch failed, job created but needs manual dispatch:", e);
+      }
       setTimeout(() => navigate(`/track/${job.job_id}`), 1500);
     } catch {
       toast.error("Something went wrong creating your request.");

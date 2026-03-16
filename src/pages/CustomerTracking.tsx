@@ -137,6 +137,20 @@ export default function CustomerTracking() {
           </div>
         )}
 
+        {/* Assigned driver */}
+        {assignedDriver && (
+          <div className="bg-sidebar-accent rounded-2xl p-4 flex items-start gap-3">
+            <User className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs text-sidebar-accent-foreground/60">Your driver</p>
+              <p className="text-sm text-sidebar-foreground font-medium">{assignedDriver.driver_name}</p>
+              {assignedDriver.phone && (
+                <p className="text-xs text-sidebar-accent-foreground/60 mt-0.5">{assignedDriver.phone}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Location */}
         {job.pickup_location && (
           <div className="bg-sidebar-accent rounded-2xl p-4 flex items-start gap-3">
