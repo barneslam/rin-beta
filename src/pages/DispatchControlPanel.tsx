@@ -133,6 +133,11 @@ const DispatchControlPanel = () => {
                           <TableCell className="font-mono text-xs">
                             {job.job_id.slice(0, 8)}
                           </TableCell>
+                          <TableCell>
+                            <Badge variant={job.user_id ? "default" : "outline"} className="text-[10px]">
+                              {job.user_id ? "Customer" : "Dispatcher"}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-sm">
                             {incident?.incident_name ?? "—"}
                           </TableCell>
