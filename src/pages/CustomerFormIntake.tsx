@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
+import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { toast } from "sonner";
 
 const COMMON_ISSUES = [
