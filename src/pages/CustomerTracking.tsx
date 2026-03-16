@@ -2,7 +2,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { JOB_STATUS_LABELS } from "@/types/rin";
-import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle } from "lucide-react";
+import { useDriverLocation } from "@/hooks/useDriverLocation";
+import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const CUSTOMER_STEPS = [
@@ -23,12 +24,13 @@ const CUSTOMER_STEPS = [
   },
   {
     key: "payment",
-    label: "Authorize Payment",
+    label: "Driver Assigned — Authorize Payment",
     statuses: ["payment_authorization_required", "payment_failed", "driver_assigned"],
   },
-  { key: "enroute", label: "Driver On the Way", statuses: ["driver_enroute"] },
-  { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived", "vehicle_loaded"] },
-  { key: "done", label: "Complete", statuses: ["job_completed"] },
+  { key: "enroute", label: "Driver On The Way", statuses: ["driver_enroute", "payment_authorized"] },
+  { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived"] },
+  { key: "service", label: "Service In Progress", statuses: ["service_in_progress", "vehicle_loaded"] },
+  { key: "done", label: "Completed", statuses: ["job_completed"] },
 ];
 
 const REASSIGNMENT_STATUSES = new Set([
@@ -76,6 +78,13 @@ export default function CustomerTracking() {
     },
   });
 
+  const isDriverActive = job && ["driver_enroute", "payment_authorized", "driver_arrived", "service_in_progress"].includes(job.job_status);
+  const { etaMinutes: liveEta, distanceKm } = useDriverLocation(
+    isDriverActive ? jobId : null,
+    job?.gps_lat ? Number(job.gps_lat) : null,
+    job?.gps_long ? Number(job.gps_long) : null
+  );
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-sidebar-background flex items-center justify-center">
@@ -98,6 +107,7 @@ export default function CustomerTracking() {
   const isCancelled = job.job_status.startsWith("cancelled");
   const activeStep = isCancelled ? -1 : getActiveStep(job.job_status);
   const isPaymentStep = job.job_status === "payment_authorization_required" || job.job_status === "payment_failed";
+  const displayEta = liveEta ?? (job.eta_minutes ? Number(job.eta_minutes) : null);
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col px-6 py-8">
@@ -109,6 +119,8 @@ export default function CustomerTracking() {
               <span className="text-2xl">✕</span>
             ) : isPaymentStep ? (
               <CreditCard className="w-7 h-7 text-primary" />
+            ) : job.job_status === "service_in_progress" ? (
+              <Wrench className="w-7 h-7 text-primary" />
             ) : activeStep >= 3 ? (
               <Truck className="w-7 h-7 text-primary" />
             ) : (
@@ -152,10 +164,13 @@ export default function CustomerTracking() {
         )}
 
         {/* ETA */}
-        {job.eta_minutes && !isCancelled && (
+        {displayEta && !isCancelled && isDriverActive && (
           <div className="bg-sidebar-accent rounded-2xl p-4 text-center">
             <p className="text-sm text-sidebar-accent-foreground/60">Estimated arrival</p>
-            <p className="text-3xl font-bold text-sidebar-foreground">{job.eta_minutes} min</p>
+            <p className="text-3xl font-bold text-sidebar-foreground">{displayEta} min</p>
+            {distanceKm != null && (
+              <p className="text-xs text-sidebar-accent-foreground/60 mt-1">{distanceKm} km away</p>
+            )}
           </div>
         )}
 

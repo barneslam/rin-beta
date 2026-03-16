@@ -125,11 +125,13 @@ serve(async (req) => {
         .eq("job_id", offer.job_id)
         .single();
 
-      // Assign driver to job — gate on payment authorization before active service
+      // Assign driver to job — clear reservation, gate on payment authorization
       await supabase.from("jobs").update({
         assigned_driver_id: offer.driver_id,
         assigned_truck_id: offer.truck_id,
         job_status: "payment_authorization_required",
+        reserved_driver_id: null,
+        reservation_expires_at: null,
       }).eq("job_id", offer.job_id);
 
       // Audit log

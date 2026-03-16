@@ -50,6 +50,13 @@ serve(async (req) => {
       });
     }
 
+    if (job.job_status !== "job_completed") {
+      return new Response(JSON.stringify({ error: "Job must be completed before capturing payment" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!job.stripe_payment_intent_id) {
       return new Response(JSON.stringify({ error: "No payment intent found for this job" }), {
         status: 400,
@@ -57,71 +64,48 @@ serve(async (req) => {
       });
     }
 
-    // Check PaymentIntent status
-    const paymentIntent = await stripe.paymentIntents.retrieve(job.stripe_payment_intent_id);
+    // Capture the previously authorized payment
+    try {
+      const paymentIntent = await stripe.paymentIntents.capture(job.stripe_payment_intent_id);
 
-    if (paymentIntent.status === "requires_capture") {
-      // Authorization succeeded — move job to payment_authorized
-      const oldStatus = job.job_status;
-      await supabase
-        .from("jobs")
-        .update({
-          job_status: "payment_authorized",
-          authorization_status: "authorized",
-        })
-        .eq("job_id", jobId);
-
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        job_id: jobId,
-        action_type: "Payment authorization succeeded",
-        event_type: "status_changed",
-        event_source: "stripe",
-        old_value: { job_status: oldStatus },
-        new_value: { job_status: "payment_authorized", authorization_status: "authorized" },
-      });
-
-      // Job event
+      // Log success
       await supabase.from("job_events").insert({
         job_id: jobId,
-        event_type: "payment_authorized",
+        event_type: "payment_captured",
         event_category: "payment",
-        message: "Customer payment authorization successful",
-        new_value: { job_status: "payment_authorized" },
+        message: `Payment captured successfully ($${(paymentIntent.amount / 100).toFixed(2)})`,
+        new_value: { amount: paymentIntent.amount, status: paymentIntent.status },
       });
 
-      return new Response(JSON.stringify({ success: true, status: "authorized" }), {
+      await supabase.from("audit_logs").insert({
+        job_id: jobId,
+        action_type: "Payment captured via Stripe",
+        event_type: "status_changed",
+        event_source: "stripe",
+        new_value: { payment_status: "captured", amount: paymentIntent.amount },
+      });
+
+      return new Response(JSON.stringify({ success: true, status: "captured" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (captureError: unknown) {
+      const errorMessage = captureError instanceof Error ? captureError.message : "Capture failed";
+
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "payment_capture_failed",
+        event_category: "payment",
+        message: `Payment capture failed: ${errorMessage}`,
+      });
+
+      return new Response(JSON.stringify({ success: false, status: "capture_failed", error: errorMessage }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // Authorization failed
-    await supabase
-      .from("jobs")
-      .update({
-        job_status: "payment_failed",
-        authorization_status: "failed",
-      })
-      .eq("job_id", jobId);
-
-    await supabase.from("job_events").insert({
-      job_id: jobId,
-      event_type: "payment_failed",
-      event_category: "payment",
-      message: `Payment authorization failed (status: ${paymentIntent.status})`,
-    });
-
-    return new Response(JSON.stringify({
-      success: false,
-      status: "failed",
-      stripe_status: paymentIntent.status,
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
   } catch (error: unknown) {
-    console.error("Error in confirm-payment-authorization:", error);
+    console.error("Error in capture-payment:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(JSON.stringify({ success: false, error: errorMessage }), {
       status: 500,
