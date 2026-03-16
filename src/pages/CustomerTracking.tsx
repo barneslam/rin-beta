@@ -6,11 +6,31 @@ import { Loader2, CheckCircle2, Truck, MapPin, Clock, User } from "lucide-react"
 
 const CUSTOMER_STEPS = [
   { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
-  { key: "finding", label: "Finding a Driver", statuses: ["ready_for_dispatch", "dispatch_recommendation_ready", "driver_offer_prepared", "driver_offer_sent"] },
+  {
+    key: "finding",
+    label: "Finding a Driver",
+    statuses: [
+      "ready_for_dispatch",
+      "dispatch_recommendation_ready",
+      "driver_offer_prepared",
+      "driver_offer_sent",
+      "reassignment_required",
+      "driver_unavailable",
+      "job_amended",
+      "customer_reapproval_pending",
+    ],
+  },
   { key: "enroute", label: "Driver On the Way", statuses: ["driver_assigned", "driver_enroute"] },
   { key: "arrived", label: "Driver Arrived", statuses: ["driver_arrived", "vehicle_loaded"] },
   { key: "done", label: "Complete", statuses: ["job_completed"] },
 ];
+
+const REASSIGNMENT_STATUSES = new Set([
+  "reassignment_required",
+  "driver_unavailable",
+  "job_amended",
+  "customer_reapproval_pending",
+]);
 
 function getActiveStep(status: string): number {
   const idx = CUSTOMER_STEPS.findIndex((s) => s.statuses.includes(status));
