@@ -45,6 +45,7 @@ const App = () => (
           <Route path="/get-help" element={<GetHelpChoice />} />
           <Route path="/get-help/chat" element={<CustomerChatIntake />} />
           <Route path="/get-help/form" element={<CustomerFormIntake />} />
+          <Route path="/get-help/voice" element={<CustomerVoiceIntake />} />
           <Route path="/track/:jobId" element={<CustomerTracking />} />
           <Route path="/pay/:jobId" element={<CustomerPayment />} />
           <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
