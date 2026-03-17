@@ -247,6 +247,32 @@ function matchIncidentTypeId(
   return match?.incident_type_id ?? incidentTypes[0]?.incident_type_id ?? null;
 }
 
+function isLocationCompleteServer(
+  text: string,
+  lat: number | null,
+  lng: number | null
+): { complete: boolean; reason: string } {
+  if (lat != null && lng != null) return { complete: true, reason: "has_coordinates" };
+  const trimmed = text.trim();
+  if (!trimmed) return { complete: false, reason: "empty" };
+
+  const VAGUE = [
+    /^(downtown|uptown|midtown)$/i,
+    /^(parking\s*(lot|garage)|garage|underground\s*garage)$/i,
+    /^(near|by|close\s*to|off)\s+(the\s+)?(highway|freeway|road|interstate|mall|airport|bridge)$/i,
+    /^(side\s+of\s+(the\s+)?road)$/i,
+    /^(highway|freeway|interstate|road|street)$/i,
+    /^(my\s+house|my\s+place|home|work|office|school)$/i,
+    /^(a\s+)?(mall|store|gas\s*station|rest\s*stop|rest\s*area)$/i,
+    /^(somewhere|around|in\s+the\s+area)$/i,
+  ];
+  for (const p of VAGUE) { if (p.test(trimmed)) return { complete: false, reason: "vague_pattern" }; }
+  if (/\d/.test(trimmed)) return { complete: true, reason: "has_digits" };
+  if (/\b(and|&)\b|\//.test(trimmed)) return { complete: true, reason: "intersection_pattern" };
+  if (trimmed.split(/\s+/).length >= 3) return { complete: true, reason: "multi_word" };
+  return { complete: false, reason: "too_short_no_specifics" };
+}
+
 function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;

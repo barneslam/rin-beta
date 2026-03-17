@@ -258,6 +258,7 @@ async function finalizeIntake(supabase: any, callSid: string, _functionUrl: stri
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const functionUrl = `${SUPABASE_URL}/functions/v1/rin-voice-intake`;
 
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/process-intake`, {
       method: "POST",
@@ -269,6 +270,33 @@ async function finalizeIntake(supabase: any, callSid: string, _functionUrl: stri
     });
 
     const result = await resp.json();
+
+    // Handle vague location rejection — re-prompt once
+    if (!result.success && result.error === "location_incomplete") {
+      // Check if we already retried location for this session
+      const locationRetried = session.retry_count >= 1 && session.step >= 5;
+      
+      if (!locationRetried) {
+        // Allow one re-prompt for a better location
+        await supabase.from("voice_call_sessions")
+          .update({ retry_count: (session.retry_count || 0) + 1, updated_at: new Date().toISOString() })
+          .eq("call_sid", callSid);
+
+        return twiml(`
+          <Gather input="speech" speechTimeout="auto" action="${functionUrl}?step=5" method="POST">
+            <Say voice="Polly.Joanna">I need a more specific location to send help. Please provide the nearest street address, intersection, highway exit, or a landmark with the city name.</Say>
+          </Gather>
+          <Redirect method="POST">${functionUrl}?step=5</Redirect>
+        `);
+      }
+
+      // Already retried — SMS fallback
+      await sendFallbackSms(session.caller_phone, callSid, session);
+      return twiml(`
+        <Say voice="Polly.Joanna">I wasn't able to confirm your exact location. We'll send you a text message so you can share your location that way. Thank you for calling RIN.</Say>
+        <Hangup/>
+      `);
+    }
 
     if (result.success && result.job_id) {
       // Update session with job_id
