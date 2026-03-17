@@ -225,7 +225,7 @@ export default function CustomerFormIntake() {
           ) : (
             <>
               <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-green-500" />
+                <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
               <h2 className="text-xl font-semibold text-sidebar-foreground">Confirmed!</h2>
               <p className="text-sidebar-foreground/70 text-sm">Finding you a driver now...</p>
