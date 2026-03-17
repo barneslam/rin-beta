@@ -25,6 +25,12 @@ export function useAutoDispatchPipeline() {
 
       if (jobRes.error || !jobRes.data) throw new Error("Job not found");
       const job = jobRes.data;
+
+      // Check job-level SMS confirmation gate
+      if (!(job as any).sms_confirmed) {
+        console.log("Job not yet confirmed by customer — dispatch deferred");
+        return { deferred: true, reason: "awaiting_customer_confirmation" };
+      }
       const drivers = driversRes.data ?? [];
       const trucks = trucksRes.data ?? [];
       const incidentTypes = incidentTypesRes.data ?? [];
