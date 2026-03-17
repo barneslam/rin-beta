@@ -374,9 +374,22 @@ export function useAcceptDispatchOffer() {
     }) => {
       const { data: currentJob } = await supabase
         .from("jobs")
-        .select("job_status")
+        .select("job_status, estimated_price")
         .eq("job_id", jobId)
         .single();
+
+      // Price validation guard — block if no valid price
+      if (!currentJob?.estimated_price || Number(currentJob.estimated_price) <= 0) {
+        await createAuditAndEvent(jobId, {
+          auditActionType: "Payment gate blocked — estimated_price missing or zero",
+          auditEventType: "system_event",
+          auditEventSource: "dispatch_engine",
+          eventType: "payment_blocked",
+          eventCategory: "exception",
+          message: "Cannot proceed to payment — estimated price is missing or zero. Dispatcher must set price before accepting.",
+        });
+        throw new Error("Cannot accept offer: estimated_price is missing or zero on this job. Set a price first.");
+      }
 
       const oldStatus = currentJob?.job_status;
 
