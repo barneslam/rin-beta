@@ -61,6 +61,9 @@ serve(async (req) => {
       .single();
     if (driverErr || !driver) throw new Error("Driver not found");
     if (!driver.phone) throw new Error("Driver has no phone number");
+    if (!/^\+[1-9]\d{6,14}$/.test(driver.phone)) {
+      throw new Error(`Driver phone "${driver.phone}" is not a valid E.164 number (must start with + and country code, e.g. +15551234567)`);
+    }
 
     // Fetch incident type name
     let incidentName = "Roadside assistance";
