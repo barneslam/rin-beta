@@ -395,26 +395,26 @@ export function useAcceptDispatchOffer() {
         .neq("offer_id", offerId)
         .eq("offer_status", "pending");
 
-      // Assign driver
+      // Assign driver — move to payment_authorization_required
       const { error: jobErr } = await supabase
         .from("jobs")
         .update({
           assigned_driver_id: driverId,
           assigned_truck_id: truckId,
-          job_status: "driver_assigned" as any,
+          job_status: "payment_authorization_required" as any,
         })
         .eq("job_id", jobId);
       if (jobErr) throw jobErr;
 
       await createAuditAndEvent(jobId, {
-        auditActionType: `Status: ${oldStatus} → driver_assigned`,
+        auditActionType: `Status: ${oldStatus} → payment_authorization_required`,
         auditEventType: "driver_assigned",
         auditEventSource: "offer_screen",
         eventType: "driver_accepted",
         eventCategory: "dispatch",
-        message: "Driver accepted job",
+        message: "Driver accepted job — payment authorization required",
         oldValue: { job_status: oldStatus },
-        newValue: { job_status: "driver_assigned", assigned_driver_id: driverId },
+        newValue: { job_status: "payment_authorization_required", assigned_driver_id: driverId },
       });
     },
     onSuccess: () => {

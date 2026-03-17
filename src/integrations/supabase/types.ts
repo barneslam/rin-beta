@@ -701,6 +701,54 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_call_sessions: {
+        Row: {
+          call_sid: string
+          caller_phone: string | null
+          created_at: string | null
+          destination_text: string | null
+          drivable: boolean | null
+          incident_description: string | null
+          job_id: string | null
+          location_text: string | null
+          location_type: string | null
+          retry_count: number
+          step: number
+          updated_at: string | null
+          vehicle_info: string | null
+        }
+        Insert: {
+          call_sid: string
+          caller_phone?: string | null
+          created_at?: string | null
+          destination_text?: string | null
+          drivable?: boolean | null
+          incident_description?: string | null
+          job_id?: string | null
+          location_text?: string | null
+          location_type?: string | null
+          retry_count?: number
+          step?: number
+          updated_at?: string | null
+          vehicle_info?: string | null
+        }
+        Update: {
+          call_sid?: string
+          caller_phone?: string | null
+          created_at?: string | null
+          destination_text?: string | null
+          drivable?: boolean | null
+          incident_description?: string | null
+          job_id?: string | null
+          location_text?: string | null
+          location_type?: string | null
+          retry_count?: number
+          step?: number
+          updated_at?: string | null
+          vehicle_info?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
