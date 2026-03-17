@@ -519,11 +519,35 @@ export function useExpireDispatchOffer() {
       driverName?: string;
       autoAdvanceFn?: () => Promise<any>;
     }) => {
+      // Expire offer + mark as no_response at offer level
       const { error } = await supabase
         .from("dispatch_offers")
-        .update({ offer_status: "expired" as any })
+        .update({
+          offer_status: "expired" as any,
+          sms_delivery_status: "no_response",
+        } as any)
         .eq("offer_id", offerId);
       if (error) throw error;
+
+      // Soft increment driver no_response_count (not marking unreachable on single miss)
+      const { data: driverData } = await supabase
+        .from("drivers")
+        .select("no_response_count")
+        .eq("driver_id", driverId)
+        .single();
+
+      const currentCount = (driverData?.no_response_count as number) ?? 0;
+      const newCount = currentCount + 1;
+      const NO_RESPONSE_THRESHOLD = 3;
+
+      await supabase
+        .from("drivers")
+        .update({
+          no_response_count: newCount,
+          // Only mark sms_delivery_status as unreachable after repeated evidence
+          ...(newCount >= NO_RESPONSE_THRESHOLD ? { sms_delivery_status: "unreachable" } : {}),
+        } as any)
+        .eq("driver_id", driverId);
 
       // Clear reservation
       await supabase
@@ -532,12 +556,12 @@ export function useExpireDispatchOffer() {
         .eq("job_id", jobId);
 
       await createAuditAndEvent(jobId, {
-        auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)}`,
+        auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)} (no_response_count: ${newCount})`,
         auditEventType: "offer_responded",
         auditEventSource: "offer_screen",
         eventType: "offer_expired",
         eventCategory: "dispatch",
-        message: `Driver ${driverName || "unknown"} offer expired`,
+        message: `Driver ${driverName || "unknown"} offer expired (no response #${newCount})`,
       });
 
       // Auto-advance to next driver
