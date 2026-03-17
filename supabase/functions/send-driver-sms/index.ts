@@ -83,9 +83,7 @@ serve(async (req) => {
     // Build payout
     const payout = job.estimated_price ? `$${Number(job.estimated_price).toFixed(2)}` : "TBD";
 
-    // Build secure link — use the published site URL or preview URL
-    const siteUrl = Deno.env.get("SITE_URL") || `${SUPABASE_URL.replace(".supabase.co", "").replace("https://", "https://id-preview--")}.lovable.app`;
-    // Fallback: use a known published URL if available
+    // Build secure link
     const offerLink = `https://rin-beta.lovable.app/driver/offer/${offerId}?token=${offer.token}`;
 
     const smsBody = `RIN DISPATCH
@@ -116,8 +114,33 @@ Reply YES to accept, NO to decline.`;
 
     const data = await response.json();
     if (!response.ok) {
+      // Track SMS delivery failure on the offer and driver
+      const now = new Date().toISOString();
+      await Promise.all([
+        supabase.from("dispatch_offers").update({
+          sms_sent_at: now,
+          sms_delivery_status: "failed",
+        }).eq("offer_id", offerId),
+        supabase.from("drivers").update({
+          last_sms_sent_at: now,
+          sms_delivery_status: "failed",
+        }).eq("driver_id", driverId),
+      ]);
       throw new Error(`Twilio API error [${response.status}]: ${JSON.stringify(data)}`);
     }
+
+    // Track successful SMS send on offer and driver
+    const now = new Date().toISOString();
+    await Promise.all([
+      supabase.from("dispatch_offers").update({
+        sms_sent_at: now,
+        sms_delivery_status: "sent",
+      }).eq("offer_id", offerId),
+      supabase.from("drivers").update({
+        last_sms_sent_at: now,
+        sms_delivery_status: "sent",
+      }).eq("driver_id", driverId),
+    ]);
 
     console.log(`SMS sent to ${driver.driver_name} (${driver.phone}), SID: ${data.sid}`);
 

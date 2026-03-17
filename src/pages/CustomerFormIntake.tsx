@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Loader2 } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, CheckCircle2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
@@ -14,6 +13,7 @@ import { createCustomerUser } from "@/hooks/useCreateCustomerUser";
 import { toast } from "sonner";
 import { createBlankPayload } from "@/types/intake";
 import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
+import { supabase } from "@/integrations/supabase/client";
 
 const COMMON_ISSUES = [
   { label: "Flat tire", keyword: "flat tire" },
@@ -23,6 +23,8 @@ const COMMON_ISSUES = [
   { label: "Stuck / Off road", keyword: "stuck" },
   { label: "Other", keyword: "" },
 ];
+
+type FormStep = "form" | "confirming" | "confirmed";
 
 export default function CustomerFormIntake() {
   const navigate = useNavigate();
@@ -45,6 +47,11 @@ export default function CustomerFormIntake() {
   const [towRequired, setTowRequired] = useState(false);
   const [destination, setDestination] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Confirmation gate state
+  const [step, setStep] = useState<FormStep>("form");
+  const [createdJobId, setCreatedJobId] = useState<string | null>(null);
+  const [confirmingWeb, setConfirmingWeb] = useState(false);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -72,7 +79,6 @@ export default function CustomerFormIntake() {
 
     const incidentDesc = issue === "Other" ? otherIssue : issue;
 
-    // Build canonical IntakePayload
     const payload = {
       ...createBlankPayload("form" as const),
       incident_description: incidentDesc,
@@ -120,7 +126,7 @@ export default function CustomerFormIntake() {
       });
 
       const job = await createJob.mutateAsync({
-        job_status: "intake_started",
+        job_status: "intake_completed",
         pickup_location: processed.location_text,
         gps_lat: processed.location_lat,
         gps_long: processed.location_lng,
@@ -132,18 +138,102 @@ export default function CustomerFormIntake() {
         incident_type_id: incidentTypeId,
         user_id: userId,
         language: processed.language,
+        sms_confirmed: false,
       } as any);
 
-      try {
-        await autoDispatch.mutateAsync(job.job_id);
-      } catch (e) {
-        console.warn("Auto-dispatch failed, job created but needs manual dispatch:", e);
-      }
-      navigate(`/track/${job.job_id}`);
+      setCreatedJobId(job.job_id);
+
+      // Send confirmation SMS (fire-and-forget, don't block UI)
+      supabase.functions.invoke("send-customer-confirmation", {
+        body: {
+          phone: processed.caller_phone,
+          jobId: job.job_id,
+          userName: processed.caller_name,
+          channel: "form",
+        },
+      }).catch((err) => console.error("Confirmation SMS error:", err));
+
+      setStep("confirming");
+      setSubmitting(false);
     } catch {
       toast.error("Something went wrong. Please try again.");
       setSubmitting(false);
     }
+  }
+
+  async function handleWebConfirm() {
+    if (!createdJobId) return;
+    setConfirmingWeb(true);
+    try {
+      // Confirm via web button (job-level)
+      await supabase.from("jobs").update({
+        sms_confirmed: true,
+        sms_confirmed_at: new Date().toISOString(),
+        confirmation_channel: "web",
+      } as any).eq("job_id", createdJobId);
+
+      await supabase.from("job_events" as any).insert([{
+        job_id: createdJobId,
+        event_type: "customer_confirmed_web",
+        event_category: "communication",
+        message: "Customer confirmed request via web button",
+      }] as any);
+
+      setStep("confirmed");
+
+      // Now trigger auto-dispatch
+      try {
+        await autoDispatch.mutateAsync(createdJobId);
+      } catch (e) {
+        console.warn("Auto-dispatch failed, job confirmed but needs manual dispatch:", e);
+      }
+
+      navigate(`/track/${createdJobId}`);
+    } catch {
+      toast.error("Could not confirm. Please try again.");
+      setConfirmingWeb(false);
+    }
+  }
+
+  // Confirmation waiting screen
+  if (step === "confirming" || step === "confirmed") {
+    return (
+      <div className="min-h-screen bg-sidebar-background flex flex-col items-center justify-center px-5">
+        <div className="max-w-sm w-full text-center space-y-6">
+          {step === "confirming" ? (
+            <>
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                <MessageSquare className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-sidebar-foreground">Confirm your request</h2>
+              <p className="text-sidebar-foreground/70 text-sm">
+                We sent a confirmation SMS to <span className="font-medium text-sidebar-foreground">{callerPhone}</span>.
+                Reply <span className="font-bold">YES</span> to confirm, or tap the button below.
+              </p>
+              <Button
+                onClick={handleWebConfirm}
+                disabled={confirmingWeb}
+                className="w-full h-14 text-lg font-semibold rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+              >
+                {confirmingWeb ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
+                Confirm Now
+              </Button>
+              <p className="text-xs text-sidebar-foreground/40">
+                Dispatch will begin after confirmation.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8 text-green-500" />
+              </div>
+              <h2 className="text-xl font-semibold text-sidebar-foreground">Confirmed!</h2>
+              <p className="text-sidebar-foreground/70 text-sm">Finding you a driver now...</p>
+            </>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (

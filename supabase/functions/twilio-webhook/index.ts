@@ -23,135 +23,252 @@ serve(async (req) => {
       return twimlResponse("We couldn't identify your phone number.");
     }
 
-    // Look up driver by phone number
+    // -----------------------------------------------------------------------
+    // 1. Check if sender is a DRIVER
+    // -----------------------------------------------------------------------
     const { data: driver } = await supabase
       .from("drivers")
       .select("driver_id, driver_name")
       .eq("phone", from)
       .single();
 
-    if (!driver) {
-      return twimlResponse("This number is not registered as a RIN driver.");
+    if (driver) {
+      return await handleDriverReply(supabase, driver, body, from);
     }
 
-    // Find the most recent pending, unexpired offer for this driver
-    const { data: offers } = await supabase
-      .from("dispatch_offers")
-      .select("offer_id, job_id, token, expires_at")
-      .eq("driver_id", driver.driver_id)
-      .eq("offer_status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(5);
+    // -----------------------------------------------------------------------
+    // 2. Check if sender is a CUSTOMER
+    // -----------------------------------------------------------------------
+    const { data: customer } = await supabase
+      .from("users")
+      .select("user_id, name")
+      .eq("phone", from)
+      .single();
 
-    const validOffers = (offers || []).filter(
-      (o) => !o.expires_at || new Date(o.expires_at).getTime() > Date.now()
-    );
-
-    if (validOffers.length === 0) {
-      return twimlResponse("You have no pending offers at this time.");
+    if (customer) {
+      return await handleCustomerReply(supabase, customer, body, from);
     }
 
-    if (validOffers.length > 1) {
-      const link = `https://rin-beta.lovable.app/driver/offer/${validOffers[0].offer_id}?token=${validOffers[0].token}`;
-      return twimlResponse(`You have multiple pending offers. Please use the link to respond: ${link}`);
-    }
-
-    const offer = validOffers[0];
-
-    if (body === "YES" || body === "Y" || body === "ACCEPT") {
-      // Price validation guard — block if no valid price
-      const { data: jobCheck } = await supabase
-        .from("jobs")
-        .select("estimated_price")
-        .eq("job_id", offer.job_id)
-        .single();
-
-      if (!jobCheck?.estimated_price || Number(jobCheck.estimated_price) <= 0) {
-        await supabase.from("job_events").insert({
-          job_id: offer.job_id,
-          event_type: "payment_blocked",
-          event_category: "exception",
-          message: "Driver accepted via SMS but estimated_price is missing — dispatcher follow-up required",
-        });
-        return twimlResponse("Job cannot proceed — pricing not set. A dispatcher will follow up.");
-      }
-
-      // Accept offer
-      await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offer.offer_id);
-      await supabase.from("dispatch_offers").update({ offer_status: "expired" })
-        .eq("job_id", offer.job_id).neq("offer_id", offer.offer_id).eq("offer_status", "pending");
-
-      // Move job to payment_authorization_required (shared lifecycle for ALL jobs)
-      await supabase.from("jobs").update({
-        assigned_driver_id: driver.driver_id,
-        job_status: "payment_authorization_required",
-      }).eq("job_id", offer.job_id);
-
-      await supabase.from("audit_logs").insert({
-        job_id: offer.job_id,
-        action_type: `Driver ${driver.driver_name} accepted via SMS — payment authorization required`,
-        event_type: "driver_assigned",
-        event_source: "twilio_sms",
-      });
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "driver_accepted",
-        event_category: "dispatch",
-        message: `Driver ${driver.driver_name} accepted job via SMS`,
-      });
-
-      // Send payment authorization SMS to customer
-      try {
-        const { data: job } = await supabase
-          .from("jobs")
-          .select("user_id")
-          .eq("job_id", offer.job_id)
-          .single();
-
-        if (job?.user_id) {
-          const { data: user } = await supabase
-            .from("users")
-            .select("phone")
-            .eq("user_id", job.user_id)
-            .single();
-
-          if (user?.phone) {
-            await sendCustomerPaymentSms(user.phone, offer.job_id);
-          }
-        }
-      } catch (e) {
-        console.error("Payment SMS to customer failed:", e);
-      }
-
-      return twimlResponse("You've accepted the job! Check the app for details.");
-    }
-
-    if (body === "NO" || body === "N" || body === "DECLINE") {
-      await supabase.from("dispatch_offers").update({ offer_status: "declined" }).eq("offer_id", offer.offer_id);
-      await supabase.from("audit_logs").insert({
-        job_id: offer.job_id,
-        action_type: `Driver ${driver.driver_name} declined via SMS`,
-        event_type: "offer_responded",
-        event_source: "twilio_sms",
-      });
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "offer_declined",
-        event_category: "dispatch",
-        message: `Driver ${driver.driver_name} declined job via SMS`,
-      });
-
-      return twimlResponse("You've declined the job offer.");
-    }
-
-    // Unrecognized reply
-    const link = `https://rin-beta.lovable.app/driver/offer/${offer.offer_id}?token=${offer.token}`;
-    return twimlResponse(`Reply YES to accept or NO to decline. Or use: ${link}`);
+    // Unknown number
+    return twimlResponse("This number is not registered with RIN. Visit rin-beta.lovable.app to get help.");
   } catch (error) {
     console.error("Twilio webhook error:", error);
     return twimlResponse("Something went wrong. Please try again or use the link in your original message.");
   }
 });
+
+// ---------------------------------------------------------------------------
+// DRIVER reply handler
+// ---------------------------------------------------------------------------
+
+async function handleDriverReply(
+  supabase: any,
+  driver: { driver_id: string; driver_name: string },
+  body: string,
+  from: string,
+) {
+  // Update driver response tracking
+  await supabase.from("drivers").update({
+    last_sms_response_at: new Date().toISOString(),
+  }).eq("driver_id", driver.driver_id);
+
+  // Find the most recent pending, unexpired offer for this driver
+  const { data: offers } = await supabase
+    .from("dispatch_offers")
+    .select("offer_id, job_id, token, expires_at")
+    .eq("driver_id", driver.driver_id)
+    .eq("offer_status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const validOffers = (offers || []).filter(
+    (o: any) => !o.expires_at || new Date(o.expires_at).getTime() > Date.now()
+  );
+
+  if (validOffers.length === 0) {
+    return twimlResponse("You have no pending offers at this time.");
+  }
+
+  if (validOffers.length > 1) {
+    const link = `https://rin-beta.lovable.app/driver/offer/${validOffers[0].offer_id}?token=${validOffers[0].token}`;
+    return twimlResponse(`You have multiple pending offers. Please use the link to respond: ${link}`);
+  }
+
+  const offer = validOffers[0];
+
+  // Update offer-level tracking
+  await supabase.from("dispatch_offers").update({
+    sms_delivery_status: "responded",
+  }).eq("offer_id", offer.offer_id);
+
+  if (body === "YES" || body === "Y" || body === "ACCEPT") {
+    // Price validation guard
+    const { data: jobCheck } = await supabase
+      .from("jobs")
+      .select("estimated_price")
+      .eq("job_id", offer.job_id)
+      .single();
+
+    if (!jobCheck?.estimated_price || Number(jobCheck.estimated_price) <= 0) {
+      await supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "payment_blocked",
+        event_category: "exception",
+        message: "Driver accepted via SMS but estimated_price is missing — dispatcher follow-up required",
+      });
+      return twimlResponse("Job cannot proceed — pricing not set. A dispatcher will follow up.");
+    }
+
+    // Accept offer
+    await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offer.offer_id);
+    await supabase.from("dispatch_offers").update({ offer_status: "expired" })
+      .eq("job_id", offer.job_id).neq("offer_id", offer.offer_id).eq("offer_status", "pending");
+
+    await supabase.from("jobs").update({
+      assigned_driver_id: driver.driver_id,
+      job_status: "payment_authorization_required",
+    }).eq("job_id", offer.job_id);
+
+    await supabase.from("audit_logs").insert({
+      job_id: offer.job_id,
+      action_type: `Driver ${driver.driver_name} accepted via SMS — payment authorization required`,
+      event_type: "driver_assigned",
+      event_source: "twilio_sms",
+    });
+    await supabase.from("job_events").insert({
+      job_id: offer.job_id,
+      event_type: "driver_accepted",
+      event_category: "dispatch",
+      message: `Driver ${driver.driver_name} accepted job via SMS`,
+    });
+
+    // Send payment authorization SMS to customer
+    try {
+      const { data: job } = await supabase
+        .from("jobs")
+        .select("user_id")
+        .eq("job_id", offer.job_id)
+        .single();
+
+      if (job?.user_id) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("phone")
+          .eq("user_id", job.user_id)
+          .single();
+
+        if (user?.phone) {
+          await sendCustomerPaymentSms(user.phone, offer.job_id);
+        }
+      }
+    } catch (e) {
+      console.error("Payment SMS to customer failed:", e);
+    }
+
+    return twimlResponse("You've accepted the job! Check the app for details.");
+  }
+
+  if (body === "NO" || body === "N" || body === "DECLINE") {
+    await supabase.from("dispatch_offers").update({ offer_status: "declined" }).eq("offer_id", offer.offer_id);
+    await supabase.from("audit_logs").insert({
+      job_id: offer.job_id,
+      action_type: `Driver ${driver.driver_name} declined via SMS`,
+      event_type: "offer_responded",
+      event_source: "twilio_sms",
+    });
+    await supabase.from("job_events").insert({
+      job_id: offer.job_id,
+      event_type: "offer_declined",
+      event_category: "dispatch",
+      message: `Driver ${driver.driver_name} declined job via SMS`,
+    });
+
+    return twimlResponse("You've declined the job offer.");
+  }
+
+  // Unrecognized reply
+  const link = `https://rin-beta.lovable.app/driver/offer/${offer.offer_id}?token=${offer.token}`;
+  return twimlResponse(`Reply YES to accept or NO to decline. Or use: ${link}`);
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMER reply handler
+// ---------------------------------------------------------------------------
+
+async function handleCustomerReply(
+  supabase: any,
+  customer: { user_id: string; name: string },
+  body: string,
+  from: string,
+) {
+  // Update customer response tracking
+  await supabase.from("users").update({
+    last_sms_response_at: new Date().toISOString(),
+  }).eq("user_id", customer.user_id);
+
+  // Find the most recent unconfirmed job for this customer
+  const { data: jobs } = await supabase
+    .from("jobs")
+    .select("job_id, job_status, sms_confirmed")
+    .eq("user_id", customer.user_id)
+    .eq("sms_confirmed", false)
+    .in("job_status", ["intake_started", "intake_completed"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const job = jobs?.[0];
+
+  if (body === "YES" || body === "Y" || body === "CONFIRM") {
+    if (!job) {
+      return twimlResponse("You have no pending requests to confirm.");
+    }
+
+    // Confirm the specific job
+    await supabase.from("jobs").update({
+      sms_confirmed: true,
+      sms_confirmed_at: new Date().toISOString(),
+      confirmation_channel: "sms",
+    }).eq("job_id", job.job_id);
+
+    await supabase.from("job_events").insert({
+      job_id: job.job_id,
+      event_type: "customer_confirmed_sms",
+      event_category: "communication",
+      message: `Customer ${customer.name} confirmed request via SMS reply`,
+    });
+
+    console.log(`Customer ${customer.name} confirmed job ${job.job_id} via SMS`);
+    return twimlResponse("Confirmed! We're finding you a driver now.");
+  }
+
+  if (body === "CANCEL") {
+    if (!job) {
+      return twimlResponse("You have no pending requests to cancel.");
+    }
+
+    await supabase.from("jobs").update({
+      job_status: "cancelled_by_customer",
+      cancelled_by: "customer_sms",
+      cancelled_reason: "Customer cancelled via SMS",
+    }).eq("job_id", job.job_id);
+
+    await supabase.from("job_events").insert({
+      job_id: job.job_id,
+      event_type: "job_cancelled",
+      event_category: "lifecycle",
+      message: `Customer ${customer.name} cancelled via SMS reply`,
+    });
+
+    return twimlResponse("Your request has been cancelled.");
+  }
+
+  // Unrecognized reply from customer
+  if (job) {
+    return twimlResponse("Reply YES to confirm your roadside assistance request, or CANCEL to cancel it.");
+  }
+
+  return twimlResponse("Thank you for reaching out to RIN. Visit rin-beta.lovable.app for help.");
+}
 
 // ---------------------------------------------------------------------------
 // Send payment SMS to customer
