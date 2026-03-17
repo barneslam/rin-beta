@@ -16,6 +16,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Clock, CheckCircle, XCircle, AlertTriangle, Timer } from "lucide-react";
 
 const WAVE_SIZE = 5;
+const OFFER_EXPIRY_SECONDS = 150;
 
 const DriverOffer = () => {
   const { activeJobId } = useActiveJob();
