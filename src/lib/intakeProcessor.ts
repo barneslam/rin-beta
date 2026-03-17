@@ -1,12 +1,65 @@
 import type { IntakePayload, ConfidenceLevel } from "@/types/intake";
-import { REQUIRED_INTAKE_FIELDS, TOW_REQUIRED_FIELDS, FIELD_LABELS } from "@/types/intake";
+import {
+  REQUIRED_INTAKE_FIELDS,
+  TOW_REQUIRED_FIELDS,
+  FIELD_LABELS,
+  VAGUE_LOCATION_PATTERNS,
+  LOCATION_COMPLETENESS_PROMPT,
+} from "@/types/intake";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface IntakeProcessingResult {
   ready: boolean;
   missingFields: string[];
   missingFieldLabels: string[];
+  locationIncomplete: boolean;
+  locationPrompt: string;
   payload: IntakePayload;
+}
+
+/**
+ * Determine if a location_text is operationally complete enough for dispatch.
+ * Coordinates or successful geocoding always override vague-text heuristics.
+ */
+export function isLocationComplete(
+  text: string,
+  lat: number | null,
+  lng: number | null
+): { complete: boolean; reason: string } {
+  // GPS coordinates always override text checks
+  if (lat != null && lng != null) {
+    return { complete: true, reason: "has_coordinates" };
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { complete: false, reason: "empty" };
+  }
+
+  // Check if the text matches a known vague pattern
+  for (const pattern of VAGUE_LOCATION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { complete: false, reason: "vague_pattern" };
+    }
+  }
+
+  // If text contains digits (likely a street number or highway exit) → accept
+  if (/\d/.test(trimmed)) {
+    return { complete: true, reason: "has_digits" };
+  }
+
+  // If text contains "and" or "&" or "/" (likely an intersection) → accept
+  if (/\b(and|&)\b|\//.test(trimmed)) {
+    return { complete: true, reason: "intersection_pattern" };
+  }
+
+  // If text has 3+ words, it's likely specific enough (e.g. "Main Street Mall" or "JFK Airport Terminal 4")
+  if (trimmed.split(/\s+/).length >= 3) {
+    return { complete: true, reason: "multi_word" };
+  }
+
+  // Short text with no digits, no intersection markers → likely vague
+  return { complete: false, reason: "too_short_no_specifics" };
 }
 
 /**
