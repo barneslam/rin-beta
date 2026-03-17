@@ -1,12 +1,65 @@
 import type { IntakePayload, ConfidenceLevel } from "@/types/intake";
-import { REQUIRED_INTAKE_FIELDS, TOW_REQUIRED_FIELDS, FIELD_LABELS } from "@/types/intake";
+import {
+  REQUIRED_INTAKE_FIELDS,
+  TOW_REQUIRED_FIELDS,
+  FIELD_LABELS,
+  VAGUE_LOCATION_PATTERNS,
+  LOCATION_COMPLETENESS_PROMPT,
+} from "@/types/intake";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface IntakeProcessingResult {
   ready: boolean;
   missingFields: string[];
   missingFieldLabels: string[];
+  locationIncomplete: boolean;
+  locationPrompt: string;
   payload: IntakePayload;
+}
+
+/**
+ * Determine if a location_text is operationally complete enough for dispatch.
+ * Coordinates or successful geocoding always override vague-text heuristics.
+ */
+export function isLocationComplete(
+  text: string,
+  lat: number | null,
+  lng: number | null
+): { complete: boolean; reason: string } {
+  // GPS coordinates always override text checks
+  if (lat != null && lng != null) {
+    return { complete: true, reason: "has_coordinates" };
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { complete: false, reason: "empty" };
+  }
+
+  // Check if the text matches a known vague pattern
+  for (const pattern of VAGUE_LOCATION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { complete: false, reason: "vague_pattern" };
+    }
+  }
+
+  // If text contains digits (likely a street number or highway exit) → accept
+  if (/\d/.test(trimmed)) {
+    return { complete: true, reason: "has_digits" };
+  }
+
+  // If text contains "and" or "&" or "/" (likely an intersection) → accept
+  if (/\b(and|&)\b|\//.test(trimmed)) {
+    return { complete: true, reason: "intersection_pattern" };
+  }
+
+  // If text has 3+ words, it's likely specific enough (e.g. "Main Street Mall" or "JFK Airport Terminal 4")
+  if (trimmed.split(/\s+/).length >= 3) {
+    return { complete: true, reason: "multi_word" };
+  }
+
+  // Short text with no digits, no intersection markers → likely vague
+  return { complete: false, reason: "too_short_no_specifics" };
 }
 
 /**
@@ -64,7 +117,22 @@ export async function processIntakePayload(
     }
   }
 
-  // 4. If tow is required, check tow-specific fields
+  // 4. Location completeness check (only if location_text is non-empty but vague)
+  let locationIncomplete = false;
+  if (updated.location_text && !missing.includes("location_text")) {
+    const locCheck = isLocationComplete(
+      updated.location_text,
+      updated.location_lat,
+      updated.location_lng
+    );
+    if (!locCheck.complete) {
+      locationIncomplete = true;
+      // Replace location_text in missing with the specific prompt label
+      missing.push("location_text");
+    }
+  }
+
+  // 5. If tow is required, check tow-specific fields
   if (updated.tow_required === true) {
     for (const field of TOW_REQUIRED_FIELDS) {
       const val = updated[field];
@@ -80,6 +148,8 @@ export async function processIntakePayload(
     ready: missing.length === 0,
     missingFields: missing,
     missingFieldLabels: missing.map((f) => FIELD_LABELS[f] || f),
+    locationIncomplete,
+    locationPrompt: locationIncomplete ? LOCATION_COMPLETENESS_PROMPT : "",
     payload: updated,
   };
 }

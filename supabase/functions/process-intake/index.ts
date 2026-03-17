@@ -31,15 +31,34 @@ serve(async (req) => {
     // 1. Geocode if needed
     let locationLat = payload.location_lat ?? null;
     let locationLng = payload.location_lng ?? null;
+    let geocodeSuccess = false;
 
     if (payload.location_text && locationLat == null) {
       try {
         const geo = await geocodeLocation(payload.location_text);
-        locationLat = geo.lat;
-        locationLng = geo.lng;
+        if (geo.lat != null && geo.lng != null) {
+          locationLat = geo.lat;
+          locationLng = geo.lng;
+          geocodeSuccess = true;
+        }
       } catch (e) {
         console.warn("Geocoding failed, continuing without coordinates:", e);
       }
+    }
+
+    // 1b. Location completeness check — block vague locations
+    const locationText = (payload.location_text || "").trim();
+    const locComplete = isLocationCompleteServer(locationText, locationLat, locationLng);
+    if (locationText && !locComplete.complete) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "location_incomplete",
+          reason: locComplete.reason,
+          prompt: "Please provide the nearest street address, intersection, highway exit, or landmark with city name.",
+        }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // 2. Parse vehicle info (best-effort)
@@ -226,6 +245,32 @@ function matchIncidentTypeId(
   );
 
   return match?.incident_type_id ?? incidentTypes[0]?.incident_type_id ?? null;
+}
+
+function isLocationCompleteServer(
+  text: string,
+  lat: number | null,
+  lng: number | null
+): { complete: boolean; reason: string } {
+  if (lat != null && lng != null) return { complete: true, reason: "has_coordinates" };
+  const trimmed = text.trim();
+  if (!trimmed) return { complete: false, reason: "empty" };
+
+  const VAGUE = [
+    /^(downtown|uptown|midtown)$/i,
+    /^(parking\s*(lot|garage)|garage|underground\s*garage)$/i,
+    /^(near|by|close\s*to|off)\s+(the\s+)?(highway|freeway|road|interstate|mall|airport|bridge)$/i,
+    /^(side\s+of\s+(the\s+)?road)$/i,
+    /^(highway|freeway|interstate|road|street)$/i,
+    /^(my\s+house|my\s+place|home|work|office|school)$/i,
+    /^(a\s+)?(mall|store|gas\s*station|rest\s*stop|rest\s*area)$/i,
+    /^(somewhere|around|in\s+the\s+area)$/i,
+  ];
+  for (const p of VAGUE) { if (p.test(trimmed)) return { complete: false, reason: "vague_pattern" }; }
+  if (/\d/.test(trimmed)) return { complete: true, reason: "has_digits" };
+  if (/\b(and|&)\b|\//.test(trimmed)) return { complete: true, reason: "intersection_pattern" };
+  if (trimmed.split(/\s+/).length >= 3) return { complete: true, reason: "multi_word" };
+  return { complete: false, reason: "too_short_no_specifics" };
 }
 
 function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
