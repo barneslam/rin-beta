@@ -179,6 +179,15 @@ const DispatchControlPanel = () => {
                               {isException(job.job_status) && (
                                 <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
                               )}
+                              {job.job_status === "payment_authorization_required" &&
+                                job.updated_at &&
+                                (Date.now() - new Date(job.updated_at).getTime()) > PAYMENT_WARNING_MINUTES * 60000 && (
+                                <Clock className="h-3.5 w-3.5 text-amber-500" />
+                              )}
+                              {job.job_status === "job_completed" &&
+                                job.customer_update_message?.startsWith("⚠ Auto-capture") && (
+                                <CreditCard className="h-3.5 w-3.5 text-destructive" />
+                              )}
                               <Badge className={`${JOB_STATUS_COLORS[job.job_status as JobStatus] ?? "bg-muted text-muted-foreground"} text-[10px]`}>
                                 {JOB_STATUS_LABELS[job.job_status as JobStatus] ?? job.job_status}
                               </Badge>
