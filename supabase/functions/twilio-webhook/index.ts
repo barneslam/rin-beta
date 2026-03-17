@@ -3,6 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
 
+// Separate keyword sets per user's refinement
+const DRIVER_ACCEPT_KEYWORDS = new Set(["YES", "Y", "ACCEPT"]);
+const DRIVER_DECLINE_KEYWORDS = new Set(["NO", "N", "DECLINE"]);
+const CUSTOMER_CONFIRM_KEYWORDS = new Set(["YES", "Y", "CONFIRM", "OK"]);
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -16,8 +21,9 @@ serve(async (req) => {
     const formData = await req.formData();
     const body = (formData.get("Body") as string || "").trim().toUpperCase();
     const from = (formData.get("From") as string || "").trim();
+    const messageSid = (formData.get("MessageSid") as string || "").trim();
 
-    console.log(`Inbound SMS from ${from}: "${body}"`);
+    console.log(`[WEBHOOK] Inbound SMS from=${from} body="${body}" sid=${messageSid}`);
 
     if (!from) {
       return twimlResponse("We couldn't identify your phone number.");
@@ -33,7 +39,7 @@ serve(async (req) => {
       .single();
 
     if (driver) {
-      return await handleDriverReply(supabase, driver, body, from);
+      return await handleDriverReply(supabase, driver, body, from, messageSid);
     }
 
     // -----------------------------------------------------------------------
@@ -46,7 +52,7 @@ serve(async (req) => {
       .single();
 
     if (customer) {
-      return await handleCustomerReply(supabase, customer, body, from);
+      return await handleCustomerReply(supabase, customer, body, from, messageSid);
     }
 
     // Unknown number
@@ -66,6 +72,7 @@ async function handleDriverReply(
   driver: { driver_id: string; driver_name: string },
   body: string,
   from: string,
+  messageSid: string,
 ) {
   // Update driver response tracking
   await supabase.from("drivers").update({
@@ -96,12 +103,14 @@ async function handleDriverReply(
 
   const offer = validOffers[0];
 
+  console.log(`[WEBHOOK] Driver ${driver.driver_name} responded "${body}" for offer ${offer.offer_id} (inbound SID: ${messageSid})`);
+
   // Update offer-level tracking
   await supabase.from("dispatch_offers").update({
     sms_delivery_status: "responded",
   }).eq("offer_id", offer.offer_id);
 
-  if (body === "YES" || body === "Y" || body === "ACCEPT") {
+  if (DRIVER_ACCEPT_KEYWORDS.has(body)) {
     // Price validation guard
     const { data: jobCheck } = await supabase
       .from("jobs")
@@ -139,7 +148,7 @@ async function handleDriverReply(
       job_id: offer.job_id,
       event_type: "driver_accepted",
       event_category: "dispatch",
-      message: `Driver ${driver.driver_name} accepted job via SMS`,
+      message: `Driver ${driver.driver_name} accepted job via SMS (inbound SID: ${messageSid})`,
     });
 
     // Send payment authorization SMS to customer
@@ -158,7 +167,7 @@ async function handleDriverReply(
           .single();
 
         if (user?.phone) {
-          await sendCustomerPaymentSms(user.phone, offer.job_id);
+          await sendCustomerPaymentSms(supabase, user.phone, offer.job_id);
         }
       }
     } catch (e) {
@@ -168,7 +177,7 @@ async function handleDriverReply(
     return twimlResponse("You've accepted the job! Check the app for details.");
   }
 
-  if (body === "NO" || body === "N" || body === "DECLINE") {
+  if (DRIVER_DECLINE_KEYWORDS.has(body)) {
     await supabase.from("dispatch_offers").update({ offer_status: "declined" }).eq("offer_id", offer.offer_id);
     await supabase.from("audit_logs").insert({
       job_id: offer.job_id,
@@ -180,7 +189,7 @@ async function handleDriverReply(
       job_id: offer.job_id,
       event_type: "offer_declined",
       event_category: "dispatch",
-      message: `Driver ${driver.driver_name} declined job via SMS`,
+      message: `Driver ${driver.driver_name} declined job via SMS (inbound SID: ${messageSid})`,
     });
 
     return twimlResponse("You've declined the job offer.");
@@ -200,6 +209,7 @@ async function handleCustomerReply(
   customer: { user_id: string; name: string },
   body: string,
   from: string,
+  messageSid: string,
 ) {
   // Update customer response tracking
   await supabase.from("users").update({
@@ -218,7 +228,9 @@ async function handleCustomerReply(
 
   const job = jobs?.[0];
 
-  if (body === "YES" || body === "Y" || body === "CONFIRM") {
+  console.log(`[WEBHOOK] Customer ${customer.name} responded "${body}" for job ${job?.job_id || "none"} (inbound SID: ${messageSid})`);
+
+  if (CUSTOMER_CONFIRM_KEYWORDS.has(body)) {
     if (!job) {
       return twimlResponse("You have no pending requests to confirm.");
     }
@@ -234,10 +246,10 @@ async function handleCustomerReply(
       job_id: job.job_id,
       event_type: "customer_confirmed_sms",
       event_category: "communication",
-      message: `Customer ${customer.name} confirmed request via SMS reply`,
+      message: `Customer ${customer.name} confirmed request via SMS reply (inbound SID: ${messageSid})`,
     });
 
-    console.log(`Customer ${customer.name} confirmed job ${job.job_id} via SMS`);
+    console.log(`[WEBHOOK] Customer ${customer.name} confirmed job ${job.job_id} via SMS`);
     return twimlResponse("Confirmed! We're finding you a driver now.");
   }
 
@@ -256,7 +268,7 @@ async function handleCustomerReply(
       job_id: job.job_id,
       event_type: "job_cancelled",
       event_category: "lifecycle",
-      message: `Customer ${customer.name} cancelled via SMS reply`,
+      message: `Customer ${customer.name} cancelled via SMS reply (inbound SID: ${messageSid})`,
     });
 
     return twimlResponse("Your request has been cancelled.");
@@ -274,7 +286,7 @@ async function handleCustomerReply(
 // Send payment SMS to customer
 // ---------------------------------------------------------------------------
 
-async function sendCustomerPaymentSms(phone: string, jobId: string) {
+async function sendCustomerPaymentSms(supabase: any, phone: string, jobId: string) {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
   const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
@@ -282,7 +294,7 @@ async function sendCustomerPaymentSms(phone: string, jobId: string) {
   const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
   if (!TWILIO_PHONE_NUMBER) throw new Error("TWILIO_PHONE_NUMBER not configured");
 
-  const body = `RIN: Your driver is confirmed and on the way! Please authorize payment to proceed: https://rin-beta.lovable.app/pay/${jobId}`;
+  const smsBody = `RIN: Your driver is confirmed and on the way! Please authorize payment to proceed: https://rin-beta.lovable.app/pay/${jobId}`;
 
   const resp = await fetch(`${GATEWAY_URL}/Messages.json`, {
     method: "POST",
@@ -291,13 +303,23 @@ async function sendCustomerPaymentSms(phone: string, jobId: string) {
       "X-Connection-Api-Key": TWILIO_API_KEY,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({ To: phone, From: TWILIO_PHONE_NUMBER, Body: body }),
+    body: new URLSearchParams({ To: phone, From: TWILIO_PHONE_NUMBER, Body: smsBody }),
   });
 
+  const data = await resp.json();
   if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Twilio SMS error [${resp.status}]: ${err}`);
+    throw new Error(`Twilio SMS error [${resp.status}]: ${JSON.stringify(data)}`);
   }
+
+  console.log(`[SMS] Payment SMS to customer ${phone} job=${jobId} SID=${data.sid}`);
+
+  // Log SID in job_events
+  await supabase.from("job_events").insert({
+    job_id: jobId,
+    event_type: "payment_sms_sent",
+    event_category: "communication",
+    message: `Payment authorization SMS sent to ${phone} (Twilio SID: ${data.sid})`,
+  });
 }
 
 // ---------------------------------------------------------------------------

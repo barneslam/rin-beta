@@ -159,7 +159,7 @@ export function useDispatchRecommendation(jobId: string | null) {
 const WAVE_SIZE = 5;
 const MAX_WAVES = 2;
 const COOLDOWN_MINUTES = 5;
-const OFFER_EXPIRY_SECONDS = 60;
+const OFFER_EXPIRY_SECONDS = 150;
 
 // ---------------------------------------------------------------------------
 // Auto Dispatch Offer — sends to next eligible driver

@@ -16,6 +16,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Clock, CheckCircle, XCircle, AlertTriangle, Timer } from "lucide-react";
 
 const WAVE_SIZE = 5;
+const OFFER_EXPIRY_SECONDS = 150;
 
 const DriverOffer = () => {
   const { activeJobId } = useActiveJob();
@@ -232,6 +233,30 @@ const DriverOffer = () => {
                 </p>
               </div>
             </div>
+
+            {/* Countdown progress bar */}
+            {secondsRemaining !== null && (
+              <div className="space-y-1">
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ease-linear ${secondsRemaining <= 10 ? "bg-destructive" : "bg-accent"}`}
+                    style={{ width: `${(secondsRemaining / OFFER_EXPIRY_SECONDS) * 100}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
+                  </span>
+                  <span className="text-xs text-muted-foreground">Waiting for driver response…</span>
+                  {pendingOffer.sms_delivery_status && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                      SMS: {pendingOffer.sms_delivery_status}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div>

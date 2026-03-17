@@ -125,11 +125,17 @@ Reply YES to accept, NO to decline.`;
           last_sms_sent_at: now,
           sms_delivery_status: "failed",
         }).eq("driver_id", driverId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "sms_delivery_failed",
+          event_category: "communication",
+          message: `Driver SMS to ${driver.driver_name} (${driver.phone}) failed: ${JSON.stringify(data)}`,
+        }),
       ]);
       throw new Error(`Twilio API error [${response.status}]: ${JSON.stringify(data)}`);
     }
 
-    // Track successful SMS send on offer and driver
+    // Track successful SMS send on offer and driver, log SID in job_events
     const now = new Date().toISOString();
     await Promise.all([
       supabase.from("dispatch_offers").update({
@@ -140,9 +146,15 @@ Reply YES to accept, NO to decline.`;
         last_sms_sent_at: now,
         sms_delivery_status: "sent",
       }).eq("driver_id", driverId),
+      supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "driver_sms_sent",
+        event_category: "communication",
+        message: `Offer SMS sent to ${driver.driver_name} (${driver.phone}) — Twilio SID: ${data.sid}`,
+      }),
     ]);
 
-    console.log(`SMS sent to ${driver.driver_name} (${driver.phone}), SID: ${data.sid}`);
+    console.log(`[SMS] Driver ${driver.driver_name} (${driver.phone}) job=${jobId} offer=${offerId} SID=${data.sid}`);
 
     return new Response(JSON.stringify({ success: true, sid: data.sid }), {
       status: 200,

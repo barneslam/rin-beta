@@ -50,6 +50,8 @@ serve(async (req) => {
         confirmation_channel: "voice",
       }).eq("job_id", jobId);
 
+      console.log(`[SMS] Voice auto-confirm for job=${jobId} — no SMS sent`);
+
       return new Response(JSON.stringify({ success: true, autoConfirmed: true, channel: "voice" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -107,15 +109,15 @@ serve(async (req) => {
       }).eq("job_id", jobId);
     }
 
-    // Log event
+    // Log event with Twilio SID
     await supabase.from("job_events").insert({
       job_id: jobId,
       event_type: "confirmation_sms_sent",
       event_category: "communication",
-      message: `Confirmation SMS sent to ${phone} (channel: ${channel || "form"})`,
+      message: `Confirmation SMS sent to ${phone} (channel: ${channel || "form"}) — Twilio SID: ${data.sid}`,
     });
 
-    console.log(`Confirmation SMS sent to ${phone} for job ${jobId}, SID: ${data.sid}`);
+    console.log(`[SMS] Customer ${phone} job=${jobId} channel=${channel || "form"} SID=${data.sid}`);
 
     return new Response(JSON.stringify({
       success: true,
