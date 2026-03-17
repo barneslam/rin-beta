@@ -117,7 +117,22 @@ export async function processIntakePayload(
     }
   }
 
-  // 4. If tow is required, check tow-specific fields
+  // 4. Location completeness check (only if location_text is non-empty but vague)
+  let locationIncomplete = false;
+  if (updated.location_text && !missing.includes("location_text")) {
+    const locCheck = isLocationComplete(
+      updated.location_text,
+      updated.location_lat,
+      updated.location_lng
+    );
+    if (!locCheck.complete) {
+      locationIncomplete = true;
+      // Replace location_text in missing with the specific prompt label
+      missing.push("location_text");
+    }
+  }
+
+  // 5. If tow is required, check tow-specific fields
   if (updated.tow_required === true) {
     for (const field of TOW_REQUIRED_FIELDS) {
       const val = updated[field];
@@ -133,6 +148,8 @@ export async function processIntakePayload(
     ready: missing.length === 0,
     missingFields: missing,
     missingFieldLabels: missing.map((f) => FIELD_LABELS[f] || f),
+    locationIncomplete,
+    locationPrompt: locationIncomplete ? LOCATION_COMPLETENESS_PROMPT : "",
     payload: updated,
   };
 }

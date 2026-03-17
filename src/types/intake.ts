@@ -54,7 +54,7 @@ export const TOW_REQUIRED_FIELDS: (keyof IntakePayload)[] = [
 
 /** Human-readable labels for missing field prompts */
 export const FIELD_LABELS: Record<string, string> = {
-  location_text: "your location",
+  location_text: "a specific address, intersection, highway exit, or landmark with city",
   incident_description: "what happened",
   vehicle_make: "your vehicle make",
   vehicle_model: "your vehicle model",
@@ -62,6 +62,24 @@ export const FIELD_LABELS: Record<string, string> = {
   caller_phone: "your phone number",
   destination_text: "where to tow your vehicle",
 };
+
+/**
+ * Patterns that indicate a vague / non-routable location.
+ * These alone (without additional specifics) are not operationally useful.
+ */
+export const VAGUE_LOCATION_PATTERNS: RegExp[] = [
+  /^(downtown|uptown|midtown)$/i,
+  /^(parking\s*(lot|garage)|garage|underground\s*garage)$/i,
+  /^(near|by|close\s*to|off)\s+(the\s+)?(highway|freeway|road|interstate|mall|airport|bridge)$/i,
+  /^(side\s+of\s+(the\s+)?road)$/i,
+  /^(highway|freeway|interstate|road|street)$/i,
+  /^(my\s+house|my\s+place|home|work|office|school)$/i,
+  /^(a\s+)?(mall|store|gas\s*station|rest\s*stop|rest\s*area)$/i,
+  /^(somewhere|around|in\s+the\s+area)$/i,
+];
+
+export const LOCATION_COMPLETENESS_PROMPT =
+  "Please provide the nearest street address, intersection, highway exit, or landmark with city name.";
 
 /** Create a blank intake payload with defaults */
 export function createBlankPayload(source: IntakeSource): IntakePayload {
