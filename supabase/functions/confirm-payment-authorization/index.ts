@@ -61,17 +61,9 @@ serve(async (req) => {
     const paymentIntent = await stripe.paymentIntents.retrieve(job.stripe_payment_intent_id);
 
     if (paymentIntent.status === "requires_capture") {
-      // Authorization succeeded — move job to payment_authorized
       const oldStatus = job.job_status;
-      await supabase
-        .from("jobs")
-        .update({
-          job_status: "payment_authorized",
-          authorization_status: "authorized",
-        })
-        .eq("job_id", jobId);
 
-      // Audit log
+      // 1. Log payment_authorized as an auditable event (kept for audit trail)
       await supabase.from("audit_logs").insert({
         job_id: jobId,
         action_type: "Payment authorization succeeded",
@@ -81,7 +73,6 @@ serve(async (req) => {
         new_value: { job_status: "payment_authorized", authorization_status: "authorized" },
       });
 
-      // Job event
       await supabase.from("job_events").insert({
         job_id: jobId,
         event_type: "payment_authorized",
@@ -90,7 +81,42 @@ serve(async (req) => {
         new_value: { job_status: "payment_authorized" },
       });
 
-      return new Response(JSON.stringify({ success: true, status: "authorized" }), {
+      // 2. Auto-advance to driver_enroute (operational status)
+      await supabase
+        .from("jobs")
+        .update({
+          job_status: "driver_enroute",
+          authorization_status: "authorized",
+        })
+        .eq("job_id", jobId);
+
+      // 3. Log the auto-advancement
+      await supabase.from("audit_logs").insert({
+        job_id: jobId,
+        action_type: `Status: payment_authorized → driver_enroute (auto-advanced)`,
+        event_type: "status_changed",
+        event_source: "stripe",
+        old_value: { job_status: "payment_authorized" },
+        new_value: { job_status: "driver_enroute" },
+      });
+
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "status_changed",
+        event_category: "lifecycle",
+        message: "Payment authorized — driver en route",
+        new_value: { job_status: "driver_enroute" },
+      });
+
+      // 4. Customer update event
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "customer_update",
+        event_category: "customer_update",
+        message: "Payment authorized! Your driver is now on the way.",
+      });
+
+      return new Response(JSON.stringify({ success: true, status: "authorized", advanced_to: "driver_enroute" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

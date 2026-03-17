@@ -104,6 +104,29 @@ export function useUpdateJob() {
         oldJob as unknown as Record<string, unknown>,
         data as unknown as Record<string, unknown>
       );
+
+      // --- Auto-capture payment when job reaches job_completed ---
+      if (updates.job_status === "job_completed" && data.stripe_payment_intent_id) {
+        try {
+          const captureResult = await supabase.functions.invoke("capture-payment", {
+            body: { jobId },
+          });
+          if (captureResult.error || !captureResult.data?.success) {
+            const errMsg = captureResult.data?.error || captureResult.error?.message || "Unknown capture error";
+            console.error("Auto-capture failed:", errMsg);
+            // Persist failure as customer_update_message so dispatcher UI can see it
+            await supabase.from("jobs").update({
+              customer_update_message: `⚠ Auto-capture failed: ${errMsg}`,
+            }).eq("job_id", jobId);
+          }
+        } catch (captureErr) {
+          console.error("Auto-capture invoke error:", captureErr);
+          await supabase.from("jobs").update({
+            customer_update_message: `⚠ Auto-capture failed: ${(captureErr as Error).message}`,
+          }).eq("job_id", jobId);
+        }
+      }
+
       return data;
     },
     onSuccess: (data) => {

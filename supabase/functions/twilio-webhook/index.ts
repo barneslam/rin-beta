@@ -59,6 +59,23 @@ serve(async (req) => {
     const offer = validOffers[0];
 
     if (body === "YES" || body === "Y" || body === "ACCEPT") {
+      // Price validation guard — block if no valid price
+      const { data: jobCheck } = await supabase
+        .from("jobs")
+        .select("estimated_price")
+        .eq("job_id", offer.job_id)
+        .single();
+
+      if (!jobCheck?.estimated_price || Number(jobCheck.estimated_price) <= 0) {
+        await supabase.from("job_events").insert({
+          job_id: offer.job_id,
+          event_type: "payment_blocked",
+          event_category: "exception",
+          message: "Driver accepted via SMS but estimated_price is missing — dispatcher follow-up required",
+        });
+        return twimlResponse("Job cannot proceed — pricing not set. A dispatcher will follow up.");
+      }
+
       // Accept offer
       await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offer.offer_id);
       await supabase.from("dispatch_offers").update({ offer_status: "expired" })

@@ -11,7 +11,10 @@ import { useJobEventsForFeed } from "@/hooks/useReferenceData";
 import { useActiveJob } from "@/context/JobContext";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus } from "@/types/rin";
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { AlertTriangle, ExternalLink, Clock, CreditCard } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { PAYMENT_WARNING_MINUTES } from "@/lib/paymentConstants";
 
 const EXCEPTION_STATUSES: string[] = [
   "customer_reapproval_pending",
@@ -44,6 +47,24 @@ const DispatchControlPanel = () => {
   const { setActiveJobId } = useActiveJob();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
+  const [checkingTimeouts, setCheckingTimeouts] = useState(false);
+
+  const handleCheckTimeouts = async () => {
+    setCheckingTimeouts(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-payment-timeout");
+      if (error) throw error;
+      if (data?.expired > 0) {
+        toast({ title: "Timeouts Processed", description: `${data.expired} job(s) expired for payment timeout.` });
+      } else {
+        toast({ title: "No Timeouts", description: "No stale payment jobs found." });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setCheckingTimeouts(false);
+    }
+  };
 
   const driverMap = Object.fromEntries((drivers ?? []).map((d) => [d.driver_id, d]));
   const incidentMap = Object.fromEntries((incidentTypes ?? []).map((i) => [i.incident_type_id, i]));
@@ -158,6 +179,15 @@ const DispatchControlPanel = () => {
                               {isException(job.job_status) && (
                                 <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
                               )}
+                              {job.job_status === "payment_authorization_required" &&
+                                job.updated_at &&
+                                (Date.now() - new Date(job.updated_at).getTime()) > PAYMENT_WARNING_MINUTES * 60000 && (
+                                <Clock className="h-3.5 w-3.5 text-amber-500" />
+                              )}
+                              {job.job_status === "job_completed" &&
+                                job.customer_update_message?.startsWith("⚠ Auto-capture") && (
+                                <CreditCard className="h-3.5 w-3.5 text-destructive" />
+                              )}
                               <Badge className={`${JOB_STATUS_COLORS[job.job_status as JobStatus] ?? "bg-muted text-muted-foreground"} text-[10px]`}>
                                 {JOB_STATUS_LABELS[job.job_status as JobStatus] ?? job.job_status}
                               </Badge>
@@ -177,7 +207,26 @@ const DispatchControlPanel = () => {
         </CardContent>
       </Card>
 
-      {/* Section 2: Exception Queue */}
+      {/* Payment Timeout Control */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Payment Timeout Check
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Expire jobs stuck in payment authorization for more than 30 minutes.
+            </p>
+            <Button size="sm" variant="outline" onClick={handleCheckTimeouts} disabled={checkingTimeouts}>
+              {checkingTimeouts ? "Checking…" : "Check Timeouts"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
