@@ -207,7 +207,26 @@ const DispatchControlPanel = () => {
         </CardContent>
       </Card>
 
-      {/* Section 2: Exception Queue */}
+      {/* Payment Timeout Control */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Payment Timeout Check
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Expire jobs stuck in payment authorization for more than 30 minutes.
+            </p>
+            <Button size="sm" variant="outline" onClick={handleCheckTimeouts} disabled={checkingTimeouts}>
+              {checkingTimeouts ? "Checking…" : "Check Timeouts"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
