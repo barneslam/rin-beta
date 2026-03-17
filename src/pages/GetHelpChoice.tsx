@@ -50,7 +50,7 @@ export default function GetHelpChoice() {
             </div>
             <div className="text-left">
               <p className="text-lg font-semibold">Call RIN</p>
-              <p className="text-sm text-sidebar-accent-foreground/70">Speak with our AI dispatcher</p>
+              <p className="text-sm text-sidebar-accent-foreground/70">Call for guided roadside help</p>
             </div>
           </button>
         </div>
