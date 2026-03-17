@@ -67,6 +67,8 @@ export type Database = {
           offer_id: string
           offer_status: Database["public"]["Enums"]["offer_status"]
           response_time: number | null
+          sms_delivery_status: string | null
+          sms_sent_at: string | null
           token: string | null
           truck_id: string | null
         }
@@ -78,6 +80,8 @@ export type Database = {
           offer_id?: string
           offer_status?: Database["public"]["Enums"]["offer_status"]
           response_time?: number | null
+          sms_delivery_status?: string | null
+          sms_sent_at?: string | null
           token?: string | null
           truck_id?: string | null
         }
@@ -89,6 +93,8 @@ export type Database = {
           offer_id?: string
           offer_status?: Database["public"]["Enums"]["offer_status"]
           response_time?: number | null
+          sms_delivery_status?: string | null
+          sms_sent_at?: string | null
           token?: string | null
           truck_id?: string | null
         }
@@ -173,11 +179,15 @@ export type Database = {
           driver_name: string
           gps_lat: number | null
           gps_long: number | null
+          last_sms_response_at: string | null
+          last_sms_sent_at: string | null
+          no_response_count: number
           phone: string | null
           rating: number | null
           reliability_score: number | null
           review_count: number | null
           service_radius_km: number | null
+          sms_delivery_status: string | null
           updated_at: string
         }
         Insert: {
@@ -188,11 +198,15 @@ export type Database = {
           driver_name: string
           gps_lat?: number | null
           gps_long?: number | null
+          last_sms_response_at?: string | null
+          last_sms_sent_at?: string | null
+          no_response_count?: number
           phone?: string | null
           rating?: number | null
           reliability_score?: number | null
           review_count?: number | null
           service_radius_km?: number | null
+          sms_delivery_status?: string | null
           updated_at?: string
         }
         Update: {
@@ -203,11 +217,15 @@ export type Database = {
           driver_name?: string
           gps_lat?: number | null
           gps_long?: number | null
+          last_sms_response_at?: string | null
+          last_sms_sent_at?: string | null
+          no_response_count?: number
           phone?: string | null
           rating?: number | null
           reliability_score?: number | null
           review_count?: number | null
           service_radius_km?: number | null
+          sms_delivery_status?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -331,6 +349,7 @@ export type Database = {
           cancellation_fee_reason: string | null
           cancelled_by: string | null
           cancelled_reason: string | null
+          confirmation_channel: string | null
           created_at: string
           customer_update_message: string | null
           dispatch_attempt_count: number
@@ -350,6 +369,8 @@ export type Database = {
           required_truck_type_id: string | null
           reservation_expires_at: string | null
           reserved_driver_id: string | null
+          sms_confirmed: boolean
+          sms_confirmed_at: string | null
           stripe_payment_intent_id: string | null
           updated_at: string
           user_id: string | null
@@ -370,6 +391,7 @@ export type Database = {
           cancellation_fee_reason?: string | null
           cancelled_by?: string | null
           cancelled_reason?: string | null
+          confirmation_channel?: string | null
           created_at?: string
           customer_update_message?: string | null
           dispatch_attempt_count?: number
@@ -389,6 +411,8 @@ export type Database = {
           required_truck_type_id?: string | null
           reservation_expires_at?: string | null
           reserved_driver_id?: string | null
+          sms_confirmed?: boolean
+          sms_confirmed_at?: string | null
           stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -409,6 +433,7 @@ export type Database = {
           cancellation_fee_reason?: string | null
           cancelled_by?: string | null
           cancelled_reason?: string | null
+          confirmation_channel?: string | null
           created_at?: string
           customer_update_message?: string | null
           dispatch_attempt_count?: number
@@ -428,6 +453,8 @@ export type Database = {
           required_truck_type_id?: string | null
           reservation_expires_at?: string | null
           reserved_driver_id?: string | null
+          sms_confirmed?: boolean
+          sms_confirmed_at?: string | null
           stripe_payment_intent_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -663,6 +690,8 @@ export type Database = {
         Row: {
           created_at: string
           email: string | null
+          last_sms_response_at: string | null
+          last_sms_sent_at: string | null
           license_plate: string | null
           name: string
           payment_token_reference: string | null
@@ -676,6 +705,8 @@ export type Database = {
         Insert: {
           created_at?: string
           email?: string | null
+          last_sms_response_at?: string | null
+          last_sms_sent_at?: string | null
           license_plate?: string | null
           name: string
           payment_token_reference?: string | null
@@ -689,6 +720,8 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string | null
+          last_sms_response_at?: string | null
+          last_sms_sent_at?: string | null
           license_plate?: string | null
           name?: string
           payment_token_reference?: string | null
