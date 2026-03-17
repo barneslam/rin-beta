@@ -31,15 +31,34 @@ serve(async (req) => {
     // 1. Geocode if needed
     let locationLat = payload.location_lat ?? null;
     let locationLng = payload.location_lng ?? null;
+    let geocodeSuccess = false;
 
     if (payload.location_text && locationLat == null) {
       try {
         const geo = await geocodeLocation(payload.location_text);
-        locationLat = geo.lat;
-        locationLng = geo.lng;
+        if (geo.lat != null && geo.lng != null) {
+          locationLat = geo.lat;
+          locationLng = geo.lng;
+          geocodeSuccess = true;
+        }
       } catch (e) {
         console.warn("Geocoding failed, continuing without coordinates:", e);
       }
+    }
+
+    // 1b. Location completeness check — block vague locations
+    const locationText = (payload.location_text || "").trim();
+    const locComplete = isLocationCompleteServer(locationText, locationLat, locationLng);
+    if (locationText && !locComplete.complete) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "location_incomplete",
+          reason: locComplete.reason,
+          prompt: "Please provide the nearest street address, intersection, highway exit, or landmark with city name.",
+        }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // 2. Parse vehicle info (best-effort)
