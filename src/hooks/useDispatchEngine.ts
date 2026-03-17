@@ -407,14 +407,14 @@ export function useAcceptDispatchOffer() {
       if (jobErr) throw jobErr;
 
       await createAuditAndEvent(jobId, {
-        auditActionType: `Status: ${oldStatus} → driver_assigned`,
+        auditActionType: `Status: ${oldStatus} → payment_authorization_required`,
         auditEventType: "driver_assigned",
         auditEventSource: "offer_screen",
         eventType: "driver_accepted",
         eventCategory: "dispatch",
-        message: "Driver accepted job",
+        message: "Driver accepted job — payment authorization required",
         oldValue: { job_status: oldStatus },
-        newValue: { job_status: "driver_assigned", assigned_driver_id: driverId },
+        newValue: { job_status: "payment_authorization_required", assigned_driver_id: driverId },
       });
     },
     onSuccess: () => {
