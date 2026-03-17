@@ -11,7 +11,10 @@ import { useJobEventsForFeed } from "@/hooks/useReferenceData";
 import { useActiveJob } from "@/context/JobContext";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus } from "@/types/rin";
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { AlertTriangle, ExternalLink, Clock, CreditCard } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { PAYMENT_WARNING_MINUTES } from "@/lib/paymentConstants";
 
 const EXCEPTION_STATUSES: string[] = [
   "customer_reapproval_pending",
