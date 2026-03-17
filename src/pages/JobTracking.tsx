@@ -10,11 +10,12 @@ import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus, Job } from "@/types/rin";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, Edit, RefreshCw, UserX, XCircle, CreditCard, AlertTriangle, MapPin } from "lucide-react";
+import { Check, Edit, RefreshCw, UserX, XCircle, CreditCard, AlertTriangle, MapPin, Clock } from "lucide-react";
 import { AmendJobDialog } from "@/components/dispatch/AmendJobDialog";
 import { ReassignmentDialog } from "@/components/dispatch/ReassignmentDialog";
 import { DriverUnavailableDialog } from "@/components/dispatch/DriverUnavailableDialog";
 import { CancelJobDialog } from "@/components/dispatch/CancelJobDialog";
+import { PAYMENT_WARNING_MINUTES, PAYMENT_EXPIRY_MINUTES } from "@/lib/paymentConstants";
 
 const TRACKING_STAGES: JobStatus[] = [
   "payment_authorization_required",
@@ -29,7 +30,7 @@ const OPERATIONAL_CONTROL_STATUSES = [
   "payment_authorized", "driver_assigned", "driver_enroute", "driver_arrived", "service_in_progress",
 ];
 
-const STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+const STALL_THRESHOLD_MS = 10 * 60 * 1000;
 
 const JobTracking = () => {
   const { activeJobId } = useActiveJob();
@@ -74,31 +75,33 @@ const JobTracking = () => {
     job.updated_at &&
     (Date.now() - new Date(job.updated_at).getTime()) > STALL_THRESHOLD_MS;
 
+  // Payment timeout warning
+  const paymentAgeMinutes = job.job_status === "payment_authorization_required" && job.updated_at
+    ? Math.floor((Date.now() - new Date(job.updated_at).getTime()) / 60000)
+    : 0;
+  const isPaymentWarning = job.job_status === "payment_authorization_required" && paymentAgeMinutes >= PAYMENT_WARNING_MINUTES;
+
+  // Capture failure from auto-capture
+  const hasCaptureFailure = job.job_status === "job_completed" &&
+    job.customer_update_message?.startsWith("⚠ Auto-capture failed");
+
   const handleAdvanceStatus = () => {
     if (!nextStage) return;
     updateJob.mutate(
-      {
-        jobId: job.job_id,
-        updates: { job_status: nextStage },
-        eventSource: "tracking_screen",
-      },
-      {
-        onSuccess: () => {
-          toast({ title: "Status Updated", description: `Job is now: ${JOB_STATUS_LABELS[nextStage]}` });
-        },
-      }
+      { jobId: job.job_id, updates: { job_status: nextStage }, eventSource: "tracking_screen" },
+      { onSuccess: () => { toast({ title: "Status Updated", description: `Job is now: ${JOB_STATUS_LABELS[nextStage]}` }); } }
     );
   };
 
   const handleCapturePayment = async () => {
     setCapturing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("capture-payment", {
-        body: { jobId: job.job_id },
-      });
+      const { data, error } = await supabase.functions.invoke("capture-payment", { body: { jobId: job.job_id } });
       if (error) throw error;
       if (data?.success) {
         toast({ title: "Payment Captured", description: "Funds have been captured successfully." });
+        // Clear failure message
+        await supabase.from("jobs").update({ customer_update_message: null }).eq("job_id", job.job_id);
       } else {
         toast({ title: "Capture Failed", description: data?.error || "Payment capture failed", variant: "destructive" });
       }
@@ -137,13 +140,48 @@ const JobTracking = () => {
             </Card>
           )}
 
+          {/* Payment timeout warning */}
+          {isPaymentWarning && (
+            <Card className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                  <Clock className="h-4 w-4" />
+                  <p className="text-sm font-medium">
+                    Payment pending for {paymentAgeMinutes} minutes — auto-expires at {PAYMENT_EXPIRY_MINUTES} min
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Payment failed warning */}
           {job.job_status === "payment_failed" && (
             <Card className="border-destructive/50">
               <CardContent className="py-4">
                 <div className="flex items-center gap-2 text-destructive">
                   <AlertTriangle className="h-4 w-4" />
-                  <p className="text-sm font-medium">Payment authorization failed — awaiting customer retry</p>
+                  <p className="text-sm font-medium">
+                    {job.authorization_status === "expired"
+                      ? "Payment authorization expired — customer did not complete payment in time"
+                      : "Payment authorization failed — awaiting customer retry"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Capture failure alert */}
+          {hasCaptureFailure && (
+            <Card className="border-destructive/50">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-destructive">
+                    <CreditCard className="h-4 w-4" />
+                    <p className="text-sm font-medium">{job.customer_update_message}</p>
+                  </div>
+                  <Button size="sm" variant="destructive" onClick={handleCapturePayment} disabled={capturing}>
+                    {capturing ? "Retrying…" : "Retry Capture"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -253,7 +291,7 @@ const JobTracking = () => {
                 </Button>
               )}
 
-              {job.job_status === "job_completed" && (
+              {job.job_status === "job_completed" && !hasCaptureFailure && (
                 <div className="mt-4 space-y-3">
                   <p className="text-sm text-success font-medium">✅ Job completed.</p>
                   <Button
@@ -262,7 +300,7 @@ const JobTracking = () => {
                     disabled={capturing}
                   >
                     <CreditCard className="h-4 w-4 mr-1.5" />
-                    {capturing ? "Capturing…" : "Capture Payment"}
+                    {capturing ? "Capturing…" : "Capture Payment (Manual Fallback)"}
                   </Button>
                 </div>
               )}

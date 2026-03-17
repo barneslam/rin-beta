@@ -47,6 +47,24 @@ const DispatchControlPanel = () => {
   const { setActiveJobId } = useActiveJob();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
+  const [checkingTimeouts, setCheckingTimeouts] = useState(false);
+
+  const handleCheckTimeouts = async () => {
+    setCheckingTimeouts(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-payment-timeout");
+      if (error) throw error;
+      if (data?.expired > 0) {
+        toast({ title: "Timeouts Processed", description: `${data.expired} job(s) expired for payment timeout.` });
+      } else {
+        toast({ title: "No Timeouts", description: "No stale payment jobs found." });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setCheckingTimeouts(false);
+    }
+  };
 
   const driverMap = Object.fromEntries((drivers ?? []).map((d) => [d.driver_id, d]));
   const incidentMap = Object.fromEntries((incidentTypes ?? []).map((i) => [i.incident_type_id, i]));
