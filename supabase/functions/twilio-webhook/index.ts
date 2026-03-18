@@ -111,22 +111,14 @@ async function handleDriverReply(
   }).eq("offer_id", offer.offer_id);
 
   if (DRIVER_ACCEPT_KEYWORDS.has(body)) {
-    // Price validation guard
+    // Check pricing availability (don't block acceptance, but gate payment SMS)
     const { data: jobCheck } = await supabase
       .from("jobs")
-      .select("estimated_price")
+      .select("estimated_price, user_id")
       .eq("job_id", offer.job_id)
       .single();
 
-    if (!jobCheck?.estimated_price || Number(jobCheck.estimated_price) <= 0) {
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "payment_blocked",
-        event_category: "exception",
-        message: "Driver accepted via SMS but estimated_price is missing — dispatcher follow-up required",
-      });
-      return twimlResponse("Job cannot proceed — pricing not set. A dispatcher will follow up.");
-    }
+    const hasPricing = jobCheck?.estimated_price && Number(jobCheck.estimated_price) > 0;
 
     // Accept offer
     await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offer.offer_id);
@@ -151,27 +143,32 @@ async function handleDriverReply(
       message: `Driver ${driver.driver_name} accepted job via SMS (inbound SID: ${messageSid})`,
     });
 
-    // Send payment authorization SMS to customer
-    try {
-      const { data: job } = await supabase
-        .from("jobs")
-        .select("user_id")
-        .eq("job_id", offer.job_id)
-        .single();
+    // Only send payment SMS if pricing is available
+    if (hasPricing) {
+      try {
+        if (jobCheck?.user_id) {
+          const { data: user } = await supabase
+            .from("users")
+            .select("phone")
+            .eq("user_id", jobCheck.user_id)
+            .single();
 
-      if (job?.user_id) {
-        const { data: user } = await supabase
-          .from("users")
-          .select("phone")
-          .eq("user_id", job.user_id)
-          .single();
-
-        if (user?.phone) {
-          await sendCustomerPaymentSms(supabase, user.phone, offer.job_id);
+          if (user?.phone) {
+            await sendCustomerPaymentSms(supabase, user.phone, offer.job_id);
+          }
         }
+      } catch (e) {
+        console.error("Payment SMS to customer failed:", e);
       }
-    } catch (e) {
-      console.error("Payment SMS to customer failed:", e);
+    } else {
+      // Log warning — pricing missing, payment SMS withheld
+      console.log(`[WEBHOOK] Pricing missing for job ${offer.job_id} — payment SMS NOT sent`);
+      await supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "pricing_missing_warning",
+        event_category: "exception",
+        message: `Driver ${driver.driver_name} accepted but estimated_price is missing. Payment SMS withheld — dispatcher must set price.`,
+      });
     }
 
     return twimlResponse("You've accepted the job! Check the app for details.");
