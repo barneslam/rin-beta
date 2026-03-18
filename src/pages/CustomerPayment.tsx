@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { Loader2, CreditCard, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, CreditCard, AlertCircle, CheckCircle2, Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Inner form that uses Stripe hooks
