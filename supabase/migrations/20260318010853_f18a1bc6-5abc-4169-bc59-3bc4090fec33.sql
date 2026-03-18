@@ -1,0 +1,1 @@
+UPDATE drivers SET phone = '+1' || REPLACE(phone, '-', '') WHERE phone NOT LIKE '+%';
