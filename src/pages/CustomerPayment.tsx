@@ -126,10 +126,12 @@ export default function CustomerPayment() {
     },
   });
 
-  // Create payment intent
+  // Create payment intent — only when pricing is available
+  const hasPricing = !!job?.estimated_price && job.estimated_price > 0;
+
   const { data: paymentData, isLoading: paymentLoading, error: paymentError } = useQuery({
     queryKey: ["payment-intent", jobId],
-    enabled: !!jobId && !!job && (job.job_status === "payment_authorization_required" || job.job_status === "payment_failed"),
+    enabled: !!jobId && !!job && hasPricing && (job.job_status === "payment_authorization_required" || job.job_status === "payment_failed"),
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("create-payment-intent", {
         body: { jobId },
