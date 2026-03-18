@@ -39,7 +39,7 @@ serve(async (req) => {
     // Fetch job
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, stripe_payment_intent_id, job_status")
+      .select("job_id, stripe_payment_intent_id, job_status, estimated_price")
       .eq("job_id", jobId)
       .single();
 
@@ -52,6 +52,24 @@ serve(async (req) => {
 
     if (!job.stripe_payment_intent_id) {
       return new Response(JSON.stringify({ error: "No payment intent found for this job" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Price integrity gate — block authorization if pricing is missing
+    if (!job.estimated_price || job.estimated_price <= 0) {
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "payment_blocked_missing_price",
+        event_category: "payment",
+        message: "Payment authorization blocked: estimated_price is missing or zero. Dispatcher must set pricing before payment can proceed.",
+      });
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Cannot authorize payment: estimated_price is missing or invalid. Dispatcher must set pricing before payment can proceed.",
+      }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
