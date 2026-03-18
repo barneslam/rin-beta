@@ -241,6 +241,7 @@ export default function CustomerPayment() {
   }
 
 
+  if (authorized) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center">
         <CheckCircle2 className="w-16 h-16 text-success mb-4" />
