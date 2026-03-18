@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Loader2, CheckCircle2, MessageSquare } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, CheckCircle2, MessageSquare, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
-import { createCustomerUser } from "@/hooks/useCreateCustomerUser";
+import { findOrCreateUserByPhone } from "@/hooks/useCreateCustomerUser";
+import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { toast } from "sonner";
 import { createBlankPayload } from "@/types/intake";
 import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
@@ -31,11 +32,11 @@ export default function CustomerFormIntake() {
   const createJob = useCreateJob();
   const autoDispatch = useAutoDispatchPipeline();
   const { data: incidentTypes } = useIncidentTypes();
+  const geo = useDeviceLocation();
 
   const [issue, setIssue] = useState("");
   const [otherIssue, setOtherIssue] = useState("");
   const [location, setLocation] = useState("");
-  const [gettingLocation, setGettingLocation] = useState(false);
   const [gpsLat, setGpsLat] = useState<number | null>(null);
   const [gpsLong, setGpsLong] = useState<number | null>(null);
   const [vehicleMake, setVehicleMake] = useState("");
@@ -53,29 +54,40 @@ export default function CustomerFormIntake() {
   const [createdJobId, setCreatedJobId] = useState<string | null>(null);
   const [confirmingWeb, setConfirmingWeb] = useState(false);
 
-  function useMyLocation() {
-    if (!navigator.geolocation) {
-      toast.error("Location not available on this device");
-      return;
+  // Sync device location into form when captured
+  useEffect(() => {
+    if (geo.status === "success" && geo.lat != null && geo.lng != null) {
+      setGpsLat(geo.lat);
+      setGpsLong(geo.lng);
+      // Attempt reverse geocode for human-readable address
+      reverseGeocode(geo.lat, geo.lng).then((addr) => {
+        if (addr) setLocation(addr);
+        else setLocation(`${geo.lat!.toFixed(5)}, ${geo.lng!.toFixed(5)}`);
+      });
     }
-    setGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGpsLat(pos.coords.latitude);
-        setGpsLong(pos.coords.longitude);
-        setLocation(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
-        setGettingLocation(false);
-      },
-      () => {
-        toast.error("Could not get your location");
-        setGettingLocation(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+  }, [geo.status, geo.lat, geo.lng]);
+
+  async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+    try {
+      const resp = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        { headers: { "User-Agent": "RIN-Roadside-Intake/1.0" } }
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.display_name || null;
+    } catch {
+      return null;
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!callerPhone.trim()) {
+      toast.error("Phone number is required");
+      return;
+    }
 
     const incidentDesc = issue === "Other" ? otherIssue : issue;
 
@@ -117,9 +129,10 @@ export default function CustomerFormIntake() {
         incidentTypes || []
       );
 
-      const userId = await createCustomerUser({
-        name: processed.caller_name || "Customer",
-        phone: processed.caller_phone || undefined,
+      // Find or create user by phone
+      const userId = await findOrCreateUserByPhone({
+        phone: processed.caller_phone,
+        name: processed.caller_name || undefined,
         vehicleMake: processed.vehicle_make || undefined,
         vehicleModel: processed.vehicle_model || undefined,
         vehicleYear: processed.vehicle_year ?? undefined,
@@ -127,7 +140,7 @@ export default function CustomerFormIntake() {
 
       const job = await createJob.mutateAsync({
         job_status: "intake_completed",
-        pickup_location: processed.location_text,
+        pickup_location: processed.location_text || null,
         gps_lat: processed.location_lat,
         gps_long: processed.location_lng,
         vehicle_make: processed.vehicle_make || null,
@@ -138,12 +151,13 @@ export default function CustomerFormIntake() {
         incident_type_id: incidentTypeId,
         user_id: userId,
         language: processed.language,
+        location_type: "roadside",
         sms_confirmed: false,
       } as any);
 
       setCreatedJobId(job.job_id);
 
-      // Send confirmation SMS (fire-and-forget, don't block UI)
+      // Send confirmation SMS (fire-and-forget)
       supabase.functions.invoke("send-customer-confirmation", {
         body: {
           phone: processed.caller_phone,
@@ -165,7 +179,6 @@ export default function CustomerFormIntake() {
     if (!createdJobId) return;
     setConfirmingWeb(true);
     try {
-      // Confirm via web button (job-level)
       await supabase.from("jobs").update({
         sms_confirmed: true,
         sms_confirmed_at: new Date().toISOString(),
@@ -181,7 +194,6 @@ export default function CustomerFormIntake() {
 
       setStep("confirmed");
 
-      // Now trigger auto-dispatch
       try {
         await autoDispatch.mutateAsync(createdJobId);
       } catch (e) {
@@ -236,6 +248,13 @@ export default function CustomerFormIntake() {
     );
   }
 
+  const geoLabel =
+    geo.status === "idle" ? "Use my location" :
+    geo.status === "requesting" ? "Getting location..." :
+    geo.status === "success" ? "Location captured ✓" :
+    geo.status === "denied" ? "Access denied — enter below" :
+    "Retry location";
+
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col">
       <div className="p-4 flex items-center gap-3">
@@ -269,31 +288,43 @@ export default function CustomerFormIntake() {
           )}
         </div>
 
-        {/* Location */}
+        {/* Location — device-first */}
         <div className="space-y-2">
           <Label className="text-sidebar-foreground">Where are you?</Label>
-          <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={geo.status === "success" ? "secondary" : "outline"}
+            onClick={geo.requestLocation}
+            disabled={geo.status === "requesting"}
+            className="w-full h-12 rounded-xl border-sidebar-border text-sidebar-foreground gap-2"
+          >
+            {geo.status === "requesting" ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : geo.status === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-green-600" />
+            ) : (
+              <Navigation className="w-4 h-4" />
+            )}
+            {geoLabel}
+          </Button>
+          {(geo.status !== "success" || !gpsLat) && (
             <Input
-              placeholder="Address or intersection"
+              placeholder="Address, intersection, or landmark"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl flex-1"
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
             />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={useMyLocation}
-              disabled={gettingLocation}
-              className="h-12 rounded-xl border-sidebar-border text-sidebar-foreground shrink-0"
-            >
-              {gettingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-            </Button>
-          </div>
+          )}
+          {geo.status === "success" && location && (
+            <p className="text-xs text-muted-foreground truncate px-1">
+              <MapPin className="w-3 h-3 inline mr-1" />{location}
+            </p>
+          )}
         </div>
 
         {/* Vehicle */}
         <div className="space-y-2">
-          <Label className="text-sidebar-foreground">Vehicle</Label>
+          <Label className="text-sidebar-foreground">Vehicle <span className="text-muted-foreground text-xs font-normal">(year optional)</span></Label>
           <div className="grid grid-cols-3 gap-2">
             <Input placeholder="Make" value={vehicleMake} onChange={(e) => setVehicleMake(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
             <Input placeholder="Model" value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
@@ -341,7 +372,7 @@ export default function CustomerFormIntake() {
         <div className="space-y-2">
           <Label className="text-sidebar-foreground">Your info</Label>
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Name" value={callerName} onChange={(e) => setCallerName(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
+            <Input placeholder="Name (optional)" value={callerName} onChange={(e) => setCallerName(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
             <Input placeholder="Phone *" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
           </div>
         </div>

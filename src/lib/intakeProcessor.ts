@@ -53,7 +53,7 @@ export function isLocationComplete(
     return { complete: true, reason: "intersection_pattern" };
   }
 
-  // If text has 3+ words, it's likely specific enough (e.g. "Main Street Mall" or "JFK Airport Terminal 4")
+  // If text has 3+ words, it's likely specific enough
   if (trimmed.split(/\s+/).length >= 3) {
     return { complete: true, reason: "multi_word" };
   }
@@ -65,6 +65,9 @@ export function isLocationComplete(
 /**
  * Process an IntakePayload: validate required fields, attempt geocoding,
  * infer tow requirements, and return readiness status.
+ *
+ * Location logic: if coordinates are present, location_text is NOT required.
+ * Vehicle year is optional. Make/model are soft-required (warned but not blocking).
  */
 export async function processIntakePayload(
   payload: IntakePayload
@@ -101,7 +104,6 @@ export async function processIntakePayload(
     if (updated.drivable === false) {
       updated.tow_required = true;
     } else {
-      // Drivable vehicle — check if incident implies tow anyway
       const towKeywords = ["accident", "collision", "totaled", "tow"];
       const desc = updated.incident_description.toLowerCase();
       updated.tow_required = towKeywords.some((k) => desc.includes(k));
@@ -110,16 +112,24 @@ export async function processIntakePayload(
 
   // 3. Validate required fields
   const missing: string[] = [];
+  const hasCoordinates = updated.location_lat != null && updated.location_lng != null;
+
   for (const field of REQUIRED_INTAKE_FIELDS) {
+    // Skip location_text if we have GPS coordinates
+    if (field === "location_text" && hasCoordinates) {
+      continue;
+    }
+    // Skip vehicle_year — it's optional
+    // (vehicle_year is not in REQUIRED_INTAKE_FIELDS, but guard anyway)
     const val = updated[field];
     if (val === null || val === undefined || val === "") {
       missing.push(field);
     }
   }
 
-  // 4. Location completeness check (only if location_text is non-empty but vague)
+  // 4. Location completeness check (only if no coordinates and location_text exists)
   let locationIncomplete = false;
-  if (updated.location_text && !missing.includes("location_text")) {
+  if (!hasCoordinates && updated.location_text && !missing.includes("location_text")) {
     const locCheck = isLocationComplete(
       updated.location_text,
       updated.location_lat,
@@ -127,7 +137,6 @@ export async function processIntakePayload(
     );
     if (!locCheck.complete) {
       locationIncomplete = true;
-      // Replace location_text in missing with the specific prompt label
       missing.push("location_text");
     }
   }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,18 +6,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useActiveJob } from "@/context/JobContext";
 import { useCreateJob } from "@/hooks/useJobs";
-import { useUsers, useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
+import { useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
+import { findOrCreateUserByPhone } from "@/hooks/useCreateCustomerUser";
+import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { toast } from "sonner";
+import { Navigation, Loader2, CheckCircle2, MapPin } from "lucide-react";
+
+const LOCATION_TYPES = [
+  { value: "roadside", label: "Roadside" },
+  { value: "highway", label: "Highway" },
+  { value: "residential", label: "Residential" },
+  { value: "parking_lot", label: "Parking Lot" },
+  { value: "underground", label: "Underground" },
+  { value: "rural", label: "Rural" },
+];
 
 const IncidentIntake = () => {
   const { setActiveJobId } = useActiveJob();
   const createJob = useCreateJob();
-  const { data: users } = useUsers();
   const { data: incidentTypes } = useIncidentTypes();
   const { data: truckTypes } = useTruckTypes();
+  const geo = useDeviceLocation();
 
   const [form, setForm] = useState({
-    user_id: "",
+    caller_phone: "",
+    caller_name: "",
     incident_type_id: "",
     pickup_location: "",
     gps_lat: "",
@@ -25,28 +38,72 @@ const IncidentIntake = () => {
     vehicle_make: "",
     vehicle_model: "",
     vehicle_year: "",
+    location_type: "roadside",
   });
 
-  const selectedUser = users?.find((u) => u.user_id === form.user_id);
   const selectedIncident = incidentTypes?.find((i) => i.incident_type_id === form.incident_type_id);
 
-  const handleUserSelect = (userId: string) => {
-    const user = users?.find((u) => u.user_id === userId);
-    if (user) {
+  // Sync device GPS into form
+  useEffect(() => {
+    if (geo.status === "success" && geo.lat != null && geo.lng != null) {
       setForm((f) => ({
         ...f,
-        user_id: userId,
-        vehicle_make: user.vehicle_make || "",
-        vehicle_model: user.vehicle_model || "",
-        vehicle_year: user.vehicle_year?.toString() || "",
+        gps_lat: geo.lat!.toFixed(7),
+        gps_long: geo.lng!.toFixed(7),
       }));
+      // Reverse geocode for human-readable address
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${geo.lat}&lon=${geo.lng}&format=json`,
+        { headers: { "User-Agent": "RIN-Roadside-Intake/1.0" } }
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.display_name) {
+            setForm((f) => ({ ...f, pickup_location: data.display_name }));
+          }
+        })
+        .catch(() => {});
     }
-  };
+  }, [geo.status, geo.lat, geo.lng]);
+
+  // Infer location_type from incident description
+  useEffect(() => {
+    if (selectedIncident) {
+      const name = selectedIncident.incident_name.toLowerCase();
+      if (name.includes("highway") || name.includes("accident") || name.includes("collision")) {
+        setForm((f) => ({ ...f, location_type: f.location_type === "roadside" ? "highway" : f.location_type }));
+      }
+    }
+  }, [selectedIncident]);
 
   const handleSubmit = async () => {
+    if (!form.caller_phone.trim()) {
+      toast.error("Phone number is required");
+      return;
+    }
+    if (!form.incident_type_id) {
+      toast.error("Please select an incident type");
+      return;
+    }
+    // Need either GPS or typed location
+    const hasGps = form.gps_lat && form.gps_long;
+    if (!hasGps && !form.pickup_location.trim()) {
+      toast.error("Please provide a location (use device GPS or enter an address)");
+      return;
+    }
+
     try {
+      // Find or create user by phone
+      const userId = await findOrCreateUserByPhone({
+        phone: form.caller_phone,
+        name: form.caller_name || undefined,
+        vehicleMake: form.vehicle_make || undefined,
+        vehicleModel: form.vehicle_model || undefined,
+        vehicleYear: form.vehicle_year ? Number(form.vehicle_year) : undefined,
+      });
+
       const job = await createJob.mutateAsync({
-        user_id: form.user_id || undefined,
+        user_id: userId,
         incident_type_id: form.incident_type_id || undefined,
         pickup_location: form.pickup_location || undefined,
         gps_lat: form.gps_lat ? Number(form.gps_lat) : undefined,
@@ -56,7 +113,8 @@ const IncidentIntake = () => {
         vehicle_year: form.vehicle_year ? Number(form.vehicle_year) : undefined,
         required_truck_type_id: selectedIncident?.default_truck_type_id || undefined,
         required_equipment: selectedIncident?.requires_special_equipment || [],
-        job_status: "intake_started",
+        location_type: form.location_type || "roadside",
+        job_status: "intake_completed",
       });
       setActiveJobId(job.job_id);
       toast.success("Job created", { description: `Job ${job.job_id.slice(0, 8)} started` });
@@ -64,6 +122,13 @@ const IncidentIntake = () => {
       toast.error("Failed to create job");
     }
   };
+
+  const geoLabel =
+    geo.status === "idle" ? "Use Device Location" :
+    geo.status === "requesting" ? "Getting location..." :
+    geo.status === "success" ? "Location captured ✓" :
+    geo.status === "denied" ? "Access denied" :
+    "Retry location";
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -73,28 +138,29 @@ const IncidentIntake = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Caller Info — phone-based, no user select */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Caller / Motorist</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <Label className="text-xs">Select User</Label>
-              <Select value={form.user_id} onValueChange={handleUserSelect}>
-                <SelectTrigger><SelectValue placeholder="Select motorist..." /></SelectTrigger>
-                <SelectContent>
-                  {users?.map((u) => (
-                    <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Phone Number *</Label>
+              <Input
+                value={form.caller_phone}
+                onChange={(e) => setForm((f) => ({ ...f, caller_phone: e.target.value }))}
+                placeholder="+1 555-123-4567"
+                type="tel"
+              />
             </div>
-            {selectedUser && (
-              <div className="rounded bg-muted p-3 text-xs space-y-1">
-                <p><span className="text-muted-foreground">Phone:</span> {selectedUser.phone}</p>
-                <p><span className="text-muted-foreground">Email:</span> {selectedUser.email}</p>
-              </div>
-            )}
+            <div>
+              <Label className="text-xs">Name <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={form.caller_name}
+                onChange={(e) => setForm((f) => ({ ...f, caller_name: e.target.value }))}
+                placeholder="Customer name"
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -123,7 +189,7 @@ const IncidentIntake = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Vehicle Details</CardTitle>
+            <CardTitle className="text-base">Vehicle Details <span className="text-xs font-normal text-muted-foreground">(year optional)</span></CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
@@ -148,10 +214,38 @@ const IncidentIntake = () => {
             <CardTitle className="text-base">Location</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Device GPS button */}
+            <Button
+              type="button"
+              variant={geo.status === "success" ? "secondary" : "outline"}
+              onClick={geo.requestLocation}
+              disabled={geo.status === "requesting"}
+              className="w-full gap-2"
+            >
+              {geo.status === "requesting" ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : geo.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+              ) : (
+                <Navigation className="w-4 h-4" />
+              )}
+              {geoLabel}
+            </Button>
+
             <div>
               <Label className="text-xs">Pickup Location</Label>
-              <Input value={form.pickup_location} onChange={(e) => setForm((f) => ({ ...f, pickup_location: e.target.value }))} placeholder="123 Main St, Toronto" />
+              <Input
+                value={form.pickup_location}
+                onChange={(e) => setForm((f) => ({ ...f, pickup_location: e.target.value }))}
+                placeholder="123 Main St, Toronto"
+              />
+              {geo.status === "success" && form.pickup_location && (
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  <MapPin className="w-3 h-3 inline mr-1" />Auto-filled from device GPS
+                </p>
+              )}
             </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs">Latitude</Label>
@@ -161,6 +255,18 @@ const IncidentIntake = () => {
                 <Label className="text-xs">Longitude</Label>
                 <Input value={form.gps_long} onChange={(e) => setForm((f) => ({ ...f, gps_long: e.target.value }))} placeholder="-79.3832" className="font-mono text-xs" />
               </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Location Type</Label>
+              <Select value={form.location_type} onValueChange={(v) => setForm((f) => ({ ...f, location_type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {LOCATION_TYPES.map((lt) => (
+                    <SelectItem key={lt.value} value={lt.value}>{lt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>

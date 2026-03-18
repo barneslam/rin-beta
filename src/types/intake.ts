@@ -37,12 +37,14 @@ export interface IntakePayload {
   field_confidence: Record<string, ConfidenceLevel>;
 }
 
-/** Fields required before a job can be created */
+/**
+ * Fields required before a job can be created.
+ * Note: location_text is here but intakeProcessor skips it when GPS coords are present.
+ * Vehicle year is NOT required. Make/model are soft-required (not in this list).
+ */
 export const REQUIRED_INTAKE_FIELDS: (keyof IntakePayload)[] = [
   "location_text",
   "incident_description",
-  "vehicle_make",
-  "vehicle_model",
   "drivable",
   "caller_phone",
 ];
