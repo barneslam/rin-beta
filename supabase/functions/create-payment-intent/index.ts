@@ -83,14 +83,7 @@ serve(async (req) => {
       });
     }
 
-    // Validate amount
-    const price = job.estimated_price;
-    if (!price || price <= 0) {
-      return new Response(JSON.stringify({ error: "No valid estimated price on this job" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Create PaymentIntent with manual capture (authorization hold only)
 
     // Create PaymentIntent with manual capture (authorization hold only)
     const amountInCents = Math.round(price * 100);
