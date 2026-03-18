@@ -9,17 +9,19 @@ import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { validateJobForDispatch } from "@/lib/dispatchEngine";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Info } from "lucide-react";
 
-const FIELD_LABELS: Record<string, string> = {
+/** Fields shown in the validation checklist */
+const REQUIRED_FIELD_LABELS: Record<string, string> = {
   incident_type_id: "Incident Type",
-  pickup_location: "Pickup Location",
-  gps_lat: "GPS Latitude",
-  gps_long: "GPS Longitude",
+  can_vehicle_roll: "Can Vehicle Roll",
+  location: "Location (GPS or address)",
+};
+
+const SOFT_FIELD_LABELS: Record<string, string> = {
   vehicle_make: "Vehicle Make",
   vehicle_model: "Vehicle Model",
   vehicle_year: "Vehicle Year",
-  can_vehicle_roll: "Can Vehicle Roll",
   location_type: "Location Type",
 };
 
@@ -42,7 +44,11 @@ const IncidentValidation = () => {
     try {
       await updateJob.mutateAsync({
         jobId: job.job_id,
-        updates: { job_status: "ready_for_dispatch" },
+        updates: {
+          job_status: "ready_for_dispatch",
+          // Default location_type if missing
+          ...(job.location_type ? {} : { location_type: "roadside" }),
+        },
         eventSource: "validation_screen",
       });
       toast.success("Validation confirmed — ready for dispatch");
@@ -70,23 +76,48 @@ const IncidentValidation = () => {
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {Object.entries(FIELD_LABELS).map(([field, label]) => {
-              const present = validation.presentFields.includes(field);
-              return (
-                <div key={field} className="flex items-center gap-2 text-sm py-1">
-                  {present ? (
-                    <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-destructive shrink-0" />
-                  )}
-                  <span className={present ? "text-foreground" : "text-destructive font-medium"}>
-                    {label}
-                  </span>
-                </div>
-              );
-            })}
+        <CardContent className="space-y-3">
+          {/* Required fields */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Required for dispatch</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Object.entries(REQUIRED_FIELD_LABELS).map(([field, label]) => {
+                const present = validation.presentFields.includes(field);
+                return (
+                  <div key={field} className="flex items-center gap-2 text-sm py-1">
+                    {present ? (
+                      <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                    )}
+                    <span className={present ? "text-foreground" : "text-destructive font-medium"}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Soft / informational fields */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Informational (recommended)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Object.entries(SOFT_FIELD_LABELS).map(([field, label]) => {
+                const present = validation.presentFields.includes(field);
+                return (
+                  <div key={field} className="flex items-center gap-2 text-sm py-1">
+                    {present ? (
+                      <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                    ) : (
+                      <Info className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                    <span className={present ? "text-foreground" : "text-muted-foreground"}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -130,13 +161,14 @@ const IncidentValidation = () => {
             <div>
               <Label className="text-xs">Location Type</Label>
               <Select
-                value={job.location_type || ""}
+                value={job.location_type || "roadside"}
                 onValueChange={(v) =>
                   updateJob.mutate({ jobId: job.job_id, updates: { location_type: v }, eventSource: "validation_screen" })
                 }
               >
                 <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="roadside">Roadside</SelectItem>
                   <SelectItem value="highway">Highway</SelectItem>
                   <SelectItem value="residential">Residential</SelectItem>
                   <SelectItem value="parking_lot">Parking Lot</SelectItem>
@@ -195,7 +227,7 @@ const IncidentValidation = () => {
         </Button>
         {!validation.valid && (
           <p className="text-xs text-muted-foreground self-center">
-            Complete all required fields before confirming.
+            Complete required fields before confirming.
           </p>
         )}
       </div>

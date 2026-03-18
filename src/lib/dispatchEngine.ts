@@ -53,26 +53,53 @@ export interface FilterOptions {
 // Module 1 — Job Validation
 // ---------------------------------------------------------------------------
 
+/** Hard-required fields for dispatch */
 const REQUIRED_FIELDS: (keyof Job)[] = [
   "incident_type_id",
-  "pickup_location",
-  "gps_lat",
-  "gps_long",
-  "vehicle_make",
-  "vehicle_model",
-  "vehicle_year",
   "can_vehicle_roll",
-  "location_type",
 ];
 
+/**
+ * Validate a job for dispatch readiness.
+ * Location: requires EITHER (gps_lat + gps_long) OR pickup_location.
+ * Vehicle make/model: soft-required (tracked as present/missing but don't block).
+ * location_type: defaults to "roadside" if missing.
+ */
 export function validateJobForDispatch(job: Job): ValidationResult {
   const missingFields: string[] = [];
   const presentFields: string[] = [];
 
+  // Check hard-required fields
   for (const field of REQUIRED_FIELDS) {
     const value = job[field];
     if (value === null || value === undefined || value === "") {
       missingFields.push(field);
+    } else {
+      presentFields.push(field);
+    }
+  }
+
+  // Location: need either coordinates or text
+  const hasCoords = job.gps_lat != null && job.gps_long != null;
+  const hasLocationText = !!job.pickup_location;
+  if (hasCoords || hasLocationText) {
+    presentFields.push("location");
+    if (hasCoords) { presentFields.push("gps_lat"); presentFields.push("gps_long"); }
+    if (hasLocationText) presentFields.push("pickup_location");
+  } else {
+    missingFields.push("location");
+  }
+
+  // Soft-tracked fields (informational, not blockers)
+  const softFields: (keyof Job)[] = ["vehicle_make", "vehicle_model", "vehicle_year", "location_type"];
+  for (const field of softFields) {
+    const value = job[field];
+    if (value === null || value === undefined || value === "") {
+      // location_type defaults to roadside — don't flag as missing
+      if (field === "location_type") {
+        presentFields.push(field);
+      }
+      // vehicle fields are informational
     } else {
       presentFields.push(field);
     }
