@@ -111,22 +111,14 @@ async function handleDriverReply(
   }).eq("offer_id", offer.offer_id);
 
   if (DRIVER_ACCEPT_KEYWORDS.has(body)) {
-    // Price validation guard
+    // Check pricing availability (don't block acceptance, but gate payment SMS)
     const { data: jobCheck } = await supabase
       .from("jobs")
-      .select("estimated_price")
+      .select("estimated_price, user_id")
       .eq("job_id", offer.job_id)
       .single();
 
-    if (!jobCheck?.estimated_price || Number(jobCheck.estimated_price) <= 0) {
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "payment_blocked",
-        event_category: "exception",
-        message: "Driver accepted via SMS but estimated_price is missing — dispatcher follow-up required",
-      });
-      return twimlResponse("Job cannot proceed — pricing not set. A dispatcher will follow up.");
-    }
+    const hasPricing = jobCheck?.estimated_price && Number(jobCheck.estimated_price) > 0;
 
     // Accept offer
     await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offer.offer_id);
