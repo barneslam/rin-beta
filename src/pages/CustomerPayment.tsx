@@ -185,7 +185,62 @@ export default function CustomerPayment() {
     );
   }
 
-  if (authorized) {
+  // Pricing not yet set — show waiting screen with job context
+  if (!hasPricing && ["payment_authorization_required", "payment_failed"].includes(job.job_status)) {
+    const vehicleInfo = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Not specified";
+    return (
+      <div className="min-h-screen bg-background flex flex-col px-6 py-8">
+        <div className="max-w-md mx-auto w-full space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 mx-auto rounded-full bg-accent/15 flex items-center justify-center">
+              <Clock className="w-7 h-7 text-accent" />
+            </div>
+            <h1 className="text-xl font-semibold">Pricing Not Ready Yet</h1>
+            <p className="text-sm text-muted-foreground">
+              Your dispatcher is finalizing the pricing for your service. Payment will be available once pricing is confirmed.
+            </p>
+          </div>
+
+          {/* Job context */}
+          <div className="bg-muted rounded-2xl p-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Service</span>
+              <span className="font-medium">{incident?.incident_name ?? "Roadside assistance"}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Vehicle</span>
+              <span className="font-medium">{vehicleInfo}</span>
+            </div>
+            {job.pickup_location && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Location</span>
+                <span className="font-medium truncate ml-4">{job.pickup_location}</span>
+              </div>
+            )}
+            <div className="border-t pt-2 flex justify-between">
+              <span className="text-sm text-muted-foreground">Estimated price</span>
+              <span className="text-sm text-muted-foreground italic">Pending</span>
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Check Again
+          </Button>
+
+          <p className="text-xs text-muted-foreground text-center">
+            This page will be ready once your dispatcher sets the service price.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center">
         <CheckCircle2 className="w-16 h-16 text-success mb-4" />
