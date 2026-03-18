@@ -57,6 +57,18 @@ serve(async (req) => {
       });
     }
 
+    // Price integrity gate — block if pricing is missing (even for existing intents)
+    const price = job.estimated_price;
+    if (!price || price <= 0) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Cannot create payment: estimated_price is missing or invalid. Dispatcher must set pricing first.",
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // If a PaymentIntent already exists, retrieve it and return client_secret
     if (job.stripe_payment_intent_id) {
       const existingIntent = await stripe.paymentIntents.retrieve(job.stripe_payment_intent_id);

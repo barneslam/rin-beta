@@ -57,6 +57,24 @@ serve(async (req) => {
       });
     }
 
+    // Price integrity gate — block authorization if pricing is missing
+    if (!job.estimated_price || job.estimated_price <= 0) {
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "payment_blocked_missing_price",
+        event_category: "payment",
+        message: "Payment authorization blocked: estimated_price is missing or zero. Dispatcher must set pricing before payment can proceed.",
+      });
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Cannot authorize payment: estimated_price is missing or invalid. Dispatcher must set pricing before payment can proceed.",
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Check PaymentIntent status
     const paymentIntent = await stripe.paymentIntents.retrieve(job.stripe_payment_intent_id);
 
