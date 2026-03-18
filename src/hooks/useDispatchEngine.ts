@@ -413,10 +413,24 @@ export function useAcceptDispatchOffer() {
         auditEventSource: "offer_screen",
         eventType: "driver_accepted",
         eventCategory: "dispatch",
-        message: "Driver accepted job — payment authorization required",
+        message: hasPricing
+          ? "Driver accepted job — payment authorization required"
+          : "Driver accepted job — WARNING: estimated_price is missing. Payment SMS will not be sent until pricing is set.",
         oldValue: { job_status: oldStatus },
         newValue: { job_status: "payment_authorization_required", assigned_driver_id: driverId },
       });
+
+      // Surface pricing warning if missing
+      if (!hasPricing) {
+        await createAuditAndEvent(jobId, {
+          auditActionType: "Pricing missing — payment cannot proceed until dispatcher sets price",
+          auditEventType: "system_event",
+          auditEventSource: "dispatch_engine",
+          eventType: "pricing_missing_warning",
+          eventCategory: "exception",
+          message: "Driver assigned but estimated_price is missing or zero. Customer payment SMS will NOT be sent. Dispatcher must set price before payment can proceed.",
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
