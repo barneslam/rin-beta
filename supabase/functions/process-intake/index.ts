@@ -79,19 +79,65 @@ serve(async (req) => {
       }
     }
 
-    // 4. Create user record
-    const { data: user, error: userErr } = await supabase
-      .from("users")
-      .insert({
-        name: payload.caller_name || "Voice Customer",
-        phone: payload.caller_phone || null,
-        vehicle_make: vehicleMake || null,
-        vehicle_model: vehicleModel || null,
-        vehicle_year: vehicleYear,
-      })
-      .select("user_id")
-      .single();
-    if (userErr) throw new Error(`User creation failed: ${userErr.message}`);
+    // 4. Find-or-create user by phone (avoid duplicates for repeat callers)
+    let userId: string;
+    const callerPhone = payload.caller_phone || null;
+
+    if (callerPhone) {
+      const { data: existing } = await supabase
+        .from("users")
+        .select("user_id, name, vehicle_make, vehicle_model, vehicle_year")
+        .eq("phone", callerPhone)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        // Only overwrite fields that are currently empty/null on the existing record
+        const updates: Record<string, unknown> = {};
+        const incomingName = payload.caller_name || "";
+        if (!existing.name || existing.name === "Voice Customer" || existing.name === "Customer") {
+          if (incomingName && incomingName !== "Voice Customer" && incomingName !== "Customer") {
+            updates.name = incomingName;
+          }
+        }
+        if (!existing.vehicle_make && vehicleMake) updates.vehicle_make = vehicleMake;
+        if (!existing.vehicle_model && vehicleModel) updates.vehicle_model = vehicleModel;
+        if (!existing.vehicle_year && vehicleYear) updates.vehicle_year = vehicleYear;
+
+        if (Object.keys(updates).length > 0) {
+          await supabase.from("users").update(updates).eq("user_id", existing.user_id);
+        }
+        userId = existing.user_id;
+      } else {
+        const { data: newUser, error: userErr } = await supabase
+          .from("users")
+          .insert({
+            name: payload.caller_name || "Voice Customer",
+            phone: callerPhone,
+            vehicle_make: vehicleMake || null,
+            vehicle_model: vehicleModel || null,
+            vehicle_year: vehicleYear,
+          })
+          .select("user_id")
+          .single();
+        if (userErr) throw new Error(`User creation failed: ${userErr.message}`);
+        userId = newUser.user_id;
+      }
+    } else {
+      const { data: newUser, error: userErr } = await supabase
+        .from("users")
+        .insert({
+          name: payload.caller_name || "Voice Customer",
+          phone: null,
+          vehicle_make: vehicleMake || null,
+          vehicle_model: vehicleModel || null,
+          vehicle_year: vehicleYear,
+        })
+        .select("user_id")
+        .single();
+      if (userErr) throw new Error(`User creation failed: ${userErr.message}`);
+      userId = newUser.user_id;
+    }
 
     // 5. Match incident type
     const { data: incidentTypes } = await supabase.from("incident_types").select("*");
@@ -113,7 +159,7 @@ serve(async (req) => {
         can_vehicle_roll: payload.drivable ?? null,
         incident_type_id: incidentTypeId,
         language: payload.language || "en",
-        user_id: user.user_id,
+        user_id: userId,
         job_status: "intake_completed",
         location_type: payload.location_type || null,
       })
