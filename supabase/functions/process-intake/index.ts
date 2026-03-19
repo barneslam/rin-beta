@@ -159,7 +159,7 @@ serve(async (req) => {
         can_vehicle_roll: payload.drivable ?? null,
         incident_type_id: incidentTypeId,
         language: payload.language || "en",
-        user_id: user.user_id,
+        user_id: userId,
         job_status: "intake_completed",
         location_type: payload.location_type || null,
       })
