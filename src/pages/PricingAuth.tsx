@@ -152,8 +152,8 @@ const PricingAuth = () => {
 
       {/* Price saved + driver assigned success */}
       {priceSaved && isDriverAssigned && hasPricing && (
-        <div className="flex items-start gap-3 rounded-md border border-green-500/30 bg-green-500/10 p-4">
-          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-md border border-primary/30 bg-primary/10 p-4">
+          <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-medium">Price saved — payment enabled</p>
             <p className="text-xs text-muted-foreground mb-2">
