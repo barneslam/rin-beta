@@ -1,0 +1,268 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+/**
+ * SHARED ACCEPTANCE PATH — single source of truth for accepting a driver offer.
+ *
+ * Called by:
+ *   1. twilio-webhook  (SMS YES reply, source="sms")
+ *   2. driver-respond  (web link Accept button, source="web_link")
+ *   3. client-side useAcceptDispatchOffer (dispatcher screen, source="dispatcher")
+ *
+ * Input:  { offerId: string, source: "sms" | "web_link" | "dispatcher" }
+ * Output: { success: boolean, action: "accepted", jobId, driverId, pricingReady }
+ *
+ * State transitions on acceptance:
+ *   dispatch_offers[offerId].offer_status       → "accepted"
+ *   dispatch_offers[offerId].sms_delivery_status → "responded" (if sms source)
+ *   dispatch_offers[same job, other].offer_status → "expired"
+ *   drivers[driverId].last_sms_response_at       → now (if sms source)
+ *   jobs.assigned_driver_id                       → driver_id
+ *   jobs.assigned_truck_id                        → truck_id (from offer)
+ *   jobs.job_status                               → "payment_authorization_required"
+ *   jobs.reserved_driver_id                       → null
+ *   jobs.reservation_expires_at                   → null
+ */
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  try {
+    const { offerId, source } = await req.json();
+
+    if (!offerId || !source) {
+      return jsonResponse({ success: false, error: "offerId and source are required" }, 400);
+    }
+
+    const validSources = ["sms", "web_link", "dispatcher"];
+    if (!validSources.includes(source)) {
+      return jsonResponse({ success: false, error: `Invalid source. Use: ${validSources.join(", ")}` }, 400);
+    }
+
+    console.log(`[ACCEPT] Starting acceptance — offerId=${offerId} source=${source}`);
+
+    // -----------------------------------------------------------------------
+    // 1. Fetch and validate the offer
+    // -----------------------------------------------------------------------
+    const { data: offer, error: offerErr } = await supabase
+      .from("dispatch_offers")
+      .select("offer_id, job_id, driver_id, truck_id, offer_status, expires_at, token")
+      .eq("offer_id", offerId)
+      .single();
+
+    if (offerErr || !offer) {
+      console.log(`[ACCEPT] Offer not found — offerId=${offerId}`);
+      return jsonResponse({ success: false, error: "Offer not found" }, 404);
+    }
+
+    console.log(`[ACCEPT] Offer found — status=${offer.offer_status} driver=${offer.driver_id} job=${offer.job_id}`);
+
+    // Check offer is still pending
+    if (offer.offer_status !== "pending") {
+      console.log(`[ACCEPT] Offer not pending — status=${offer.offer_status}`);
+      return jsonResponse({
+        success: false,
+        error: `Offer is no longer pending (status: ${offer.offer_status})`,
+        status: offer.offer_status,
+      }, 409);
+    }
+
+    // Check expiry
+    if (offer.expires_at && new Date(offer.expires_at).getTime() < Date.now()) {
+      console.log(`[ACCEPT] Offer expired — expires_at=${offer.expires_at}`);
+      await supabase.from("dispatch_offers").update({ offer_status: "expired" }).eq("offer_id", offerId);
+      return jsonResponse({
+        success: false,
+        error: "This offer has expired and is no longer active.",
+        status: "expired",
+      }, 410);
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Fetch driver name for logging
+    // -----------------------------------------------------------------------
+    const { data: driver } = await supabase
+      .from("drivers")
+      .select("driver_name")
+      .eq("driver_id", offer.driver_id)
+      .single();
+    const driverName = driver?.driver_name || "Unknown";
+
+    // -----------------------------------------------------------------------
+    // 3. Fetch current job state for audit trail
+    // -----------------------------------------------------------------------
+    const { data: currentJob } = await supabase
+      .from("jobs")
+      .select("job_status, estimated_price, user_id")
+      .eq("job_id", offer.job_id)
+      .single();
+
+    const oldStatus = currentJob?.job_status;
+    const hasPricing = currentJob?.estimated_price && Number(currentJob.estimated_price) > 0;
+
+    console.log(`[ACCEPT] Job state — oldStatus=${oldStatus} hasPricing=${hasPricing} userId=${currentJob?.user_id}`);
+
+    // -----------------------------------------------------------------------
+    // 4. Perform all state transitions
+    // -----------------------------------------------------------------------
+
+    // 4a. Accept this offer + mark sms status if SMS source
+    const offerUpdate: Record<string, unknown> = { offer_status: "accepted" };
+    if (source === "sms") {
+      offerUpdate.sms_delivery_status = "responded";
+    }
+    await supabase.from("dispatch_offers").update(offerUpdate).eq("offer_id", offerId);
+
+    // 4b. Expire all other pending offers for this job
+    await supabase
+      .from("dispatch_offers")
+      .update({ offer_status: "expired" })
+      .eq("job_id", offer.job_id)
+      .neq("offer_id", offerId)
+      .eq("offer_status", "pending");
+
+    // 4c. Update driver response tracking (SMS source)
+    if (source === "sms") {
+      await supabase.from("drivers").update({
+        last_sms_response_at: new Date().toISOString(),
+      }).eq("driver_id", offer.driver_id);
+    }
+
+    // 4d. Assign driver to job — transition to payment_authorization_required
+    await supabase.from("jobs").update({
+      assigned_driver_id: offer.driver_id,
+      assigned_truck_id: offer.truck_id,
+      job_status: "payment_authorization_required",
+      reserved_driver_id: null,
+      reservation_expires_at: null,
+    }).eq("job_id", offer.job_id);
+
+    console.log(`[ACCEPT] State transitions complete — driver=${driverName} job=${offer.job_id} newStatus=payment_authorization_required`);
+
+    // -----------------------------------------------------------------------
+    // 5. Create audit + event logs
+    // -----------------------------------------------------------------------
+    const sourceLabel = source === "sms" ? "via SMS" : source === "web_link" ? "via web link" : "via dispatcher";
+
+    await Promise.all([
+      supabase.from("audit_logs").insert({
+        job_id: offer.job_id,
+        action_type: `Driver ${driverName} accepted offer ${sourceLabel}`,
+        event_type: "driver_assigned",
+        event_source: source === "sms" ? "twilio_sms" : source === "web_link" ? "driver_sms" : "offer_screen",
+        old_value: { job_status: oldStatus },
+        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
+      }),
+      supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "driver_accepted",
+        event_category: "dispatch",
+        actor_type: source === "dispatcher" ? "dispatcher" : "driver",
+        message: `Driver ${driverName} accepted job ${sourceLabel} — awaiting payment authorization`,
+        new_value: {
+          job_status: "payment_authorization_required",
+          assigned_driver_id: offer.driver_id,
+          source,
+        },
+      }),
+    ]);
+
+    // -----------------------------------------------------------------------
+    // 6. Handle pricing availability
+    // -----------------------------------------------------------------------
+    if (hasPricing) {
+      // Send payment SMS to customer
+      try {
+        if (currentJob?.user_id) {
+          const { data: user } = await supabase
+            .from("users")
+            .select("phone")
+            .eq("user_id", currentJob.user_id)
+            .single();
+
+          if (user?.phone) {
+            const price = Number(currentJob.estimated_price);
+            const payLink = `https://rin-beta.lovable.app/pay/${offer.job_id}`;
+            const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
+
+            const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+            const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
+            const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+            if (LOVABLE_API_KEY && TWILIO_API_KEY && TWILIO_PHONE_NUMBER) {
+              const smsResp = await fetch(`${GATEWAY_URL}/Messages.json`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                  "X-Connection-Api-Key": TWILIO_API_KEY,
+                  "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({ To: user.phone, From: TWILIO_PHONE_NUMBER, Body: smsBody }),
+              });
+
+              if (smsResp.ok) {
+                const smsData = await smsResp.json();
+                console.log(`[ACCEPT] Payment SMS sent to ${user.phone} SID=${smsData.sid}`);
+                await supabase.from("job_events").insert({
+                  job_id: offer.job_id,
+                  event_type: "payment_sms_sent",
+                  event_category: "payment",
+                  message: `Payment SMS sent to customer ($${price.toFixed(2)}) — SID: ${smsData.sid}`,
+                });
+              } else {
+                console.error(`[ACCEPT] Payment SMS failed: ${smsResp.status}`);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[ACCEPT] Payment SMS error:", e);
+      }
+    } else {
+      // Log pricing missing warning
+      console.log(`[ACCEPT] Pricing missing for job ${offer.job_id} — payment SMS withheld`);
+      await supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "pricing_missing_warning",
+        event_category: "exception",
+        message: `Driver ${driverName} accepted but estimated_price is missing. Payment SMS withheld — dispatcher must set price.`,
+      });
+    }
+
+    console.log(`[ACCEPT] Complete — offerId=${offerId} driver=${driverName} job=${offer.job_id} source=${source} pricingReady=${!!hasPricing}`);
+
+    return jsonResponse({
+      success: true,
+      action: "accepted",
+      jobId: offer.job_id,
+      driverId: offer.driver_id,
+      driverName,
+      pricingReady: !!hasPricing,
+    });
+  } catch (error: unknown) {
+    console.error("[ACCEPT] Error:", error);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return jsonResponse({ success: false, error: msg }, 500);
+  }
+});
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
