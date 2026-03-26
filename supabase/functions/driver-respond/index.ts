@@ -20,10 +20,7 @@ serve(async (req) => {
     const { offerId, token, action } = await req.json();
 
     if (!offerId || !token || !action) {
-      return new Response(JSON.stringify({ error: "Missing offerId, token, or action" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ error: "Missing offerId, token, or action" }, 400);
     }
 
     // Fetch offer and validate token
@@ -35,13 +32,12 @@ serve(async (req) => {
       .single();
 
     if (offerErr || !offer) {
-      return new Response(JSON.stringify({ error: "Invalid offer or token" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ error: "Invalid offer or token" }, 403);
     }
 
-    // Action: "view" — return offer details for the public page
+    // -----------------------------------------------------------------------
+    // VIEW — return offer details for the public page
+    // -----------------------------------------------------------------------
     if (action === "view") {
       const { data: job } = await supabase
         .from("jobs")
@@ -59,7 +55,7 @@ serve(async (req) => {
         if (incType) incidentName = incType.incident_name;
       }
 
-      return new Response(JSON.stringify({
+      return jsonResp({
         success: true,
         offer: {
           offer_id: offer.offer_id,
@@ -74,133 +70,88 @@ serve(async (req) => {
           estimated_price: job?.estimated_price,
           job_status: job?.job_status,
         },
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Check offer is still pending
-    if (offer.offer_status !== "pending") {
-      return new Response(JSON.stringify({ error: "Offer is no longer pending", status: offer.offer_status }), {
-        status: 409,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Check expiry
-    if (offer.expires_at && new Date(offer.expires_at).getTime() < Date.now()) {
-      // Mark as expired
-      await supabase.from("dispatch_offers").update({ offer_status: "expired" }).eq("offer_id", offerId);
-      return new Response(JSON.stringify({ error: "Offer has expired", status: "expired" }), {
-        status: 410,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Fetch driver name for audit
-    const { data: driver } = await supabase
-      .from("drivers")
-      .select("driver_name")
-      .eq("driver_id", offer.driver_id)
-      .single();
-    const driverName = driver?.driver_name || "Unknown";
-
+    // -----------------------------------------------------------------------
+    // ACCEPT — delegate to shared accept-driver-offer function
+    // -----------------------------------------------------------------------
     if (action === "accept") {
-      // Accept this offer
-      await supabase.from("dispatch_offers").update({ offer_status: "accepted" }).eq("offer_id", offerId);
-
-      // Expire all other pending offers for this job
-      await supabase
-        .from("dispatch_offers")
-        .update({ offer_status: "expired" })
-        .eq("job_id", offer.job_id)
-        .neq("offer_id", offerId)
-        .eq("offer_status", "pending");
-
-      // Get current job status for audit
-      const { data: currentJob } = await supabase
-        .from("jobs")
-        .select("job_status")
-        .eq("job_id", offer.job_id)
-        .single();
-
-      // Assign driver to job — clear reservation, gate on payment authorization
-      await supabase.from("jobs").update({
-        assigned_driver_id: offer.driver_id,
-        assigned_truck_id: offer.truck_id,
-        job_status: "payment_authorization_required",
-        reserved_driver_id: null,
-        reservation_expires_at: null,
-      }).eq("job_id", offer.job_id);
-
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        job_id: offer.job_id,
-        action_type: `Driver ${driverName} accepted offer via SMS/link`,
-        event_type: "driver_assigned",
-        event_source: "driver_sms",
-        old_value: { job_status: currentJob?.job_status },
-        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
+      const acceptResp = await fetch(`${SUPABASE_URL}/functions/v1/accept-driver-offer`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ offerId, source: "web_link" }),
       });
 
-      // Job event
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "driver_accepted",
-        event_category: "dispatch",
-        message: `Driver ${driverName} accepted job offer — awaiting payment authorization`,
-        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
-      });
+      const acceptData = await acceptResp.json();
 
-      return new Response(JSON.stringify({ success: true, action: "accepted" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (acceptData.success) {
+        return jsonResp({ success: true, action: "accepted" });
+      }
+
+      return jsonResp(
+        { error: acceptData.error || "Acceptance failed", status: acceptData.status },
+        acceptResp.status
+      );
     }
 
+    // -----------------------------------------------------------------------
+    // DECLINE — keep inline (simple, no shared logic needed)
+    // -----------------------------------------------------------------------
     if (action === "decline") {
-      // Decline this offer
+      // Check offer is still pending
+      if (offer.offer_status !== "pending") {
+        return jsonResp({ error: "Offer is no longer pending", status: offer.offer_status }, 409);
+      }
+
+      // Check expiry
+      if (offer.expires_at && new Date(offer.expires_at).getTime() < Date.now()) {
+        await supabase.from("dispatch_offers").update({ offer_status: "expired" }).eq("offer_id", offerId);
+        return jsonResp({ error: "Offer has expired", status: "expired" }, 410);
+      }
+
+      const { data: driver } = await supabase
+        .from("drivers")
+        .select("driver_name")
+        .eq("driver_id", offer.driver_id)
+        .single();
+      const driverName = driver?.driver_name || "Unknown";
+
       await supabase.from("dispatch_offers").update({ offer_status: "declined" }).eq("offer_id", offerId);
 
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        job_id: offer.job_id,
-        action_type: `Driver ${driverName} declined offer via SMS/link`,
-        event_type: "offer_responded",
-        event_source: "driver_sms",
-      });
+      await Promise.all([
+        supabase.from("audit_logs").insert({
+          job_id: offer.job_id,
+          action_type: `Driver ${driverName} declined offer via web link`,
+          event_type: "offer_responded",
+          event_source: "driver_sms",
+        }),
+        supabase.from("job_events").insert({
+          job_id: offer.job_id,
+          event_type: "offer_declined",
+          event_category: "dispatch",
+          actor_type: "driver",
+          message: `Driver ${driverName} declined job offer via web link`,
+        }),
+      ]);
 
-      // Job event
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "offer_declined",
-        event_category: "dispatch",
-        message: `Driver ${driverName} declined job offer`,
-      });
-
-      // Auto-advance: trigger the send-driver-sms pipeline for the next driver
-      // We need to invoke the auto-advance logic server-side
-      // For MVP, we update the job to signal the dispatcher that the offer was declined
-      // The existing client-side auto-dispatch will pick up from the dispatcher's offer page
-      // A more sophisticated approach would replicate the full ranking logic here
-
-      return new Response(JSON.stringify({ success: true, action: "declined" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ success: true, action: "declined" });
     }
 
-    return new Response(JSON.stringify({ error: "Invalid action. Use: view, accept, decline" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ error: "Invalid action. Use: view, accept, decline" }, 400);
   } catch (error: unknown) {
     console.error("Error in driver-respond:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ success: false, error: errorMessage }, 500);
   }
 });
+
+function jsonResp(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
