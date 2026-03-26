@@ -354,7 +354,7 @@ async function escalateJob(jobId: string, job: any) {
 }
 
 // ---------------------------------------------------------------------------
-// Accept Dispatch Offer
+// Accept Dispatch Offer — delegates to shared accept-driver-offer edge function
 // ---------------------------------------------------------------------------
 
 export function useAcceptDispatchOffer() {
@@ -372,65 +372,14 @@ export function useAcceptDispatchOffer() {
       driverId: string;
       truckId: string | null;
     }) => {
-      const { data: currentJob } = await supabase
-        .from("jobs")
-        .select("job_status, estimated_price")
-        .eq("job_id", jobId)
-        .single();
-
-      const oldStatus = currentJob?.job_status;
-      const hasPricing = currentJob?.estimated_price && Number(currentJob.estimated_price) > 0;
-
-      // Accept this offer
-      const { error: offerErr } = await supabase
-        .from("dispatch_offers")
-        .update({ offer_status: "accepted" as any })
-        .eq("offer_id", offerId);
-      if (offerErr) throw offerErr;
-
-      // Expire all other pending offers
-      await supabase
-        .from("dispatch_offers")
-        .update({ offer_status: "expired" as any })
-        .eq("job_id", jobId)
-        .neq("offer_id", offerId)
-        .eq("offer_status", "pending");
-
-      // Assign driver — move to payment_authorization_required
-      const { error: jobErr } = await supabase
-        .from("jobs")
-        .update({
-          assigned_driver_id: driverId,
-          assigned_truck_id: truckId,
-          job_status: "payment_authorization_required" as any,
-        })
-        .eq("job_id", jobId);
-      if (jobErr) throw jobErr;
-
-      await createAuditAndEvent(jobId, {
-        auditActionType: `Status: ${oldStatus} → payment_authorization_required`,
-        auditEventType: "driver_assigned",
-        auditEventSource: "offer_screen",
-        eventType: "driver_accepted",
-        eventCategory: "dispatch",
-        message: hasPricing
-          ? "Driver accepted job — payment authorization required"
-          : "Driver accepted job — WARNING: estimated_price is missing. Payment SMS will not be sent until pricing is set.",
-        oldValue: { job_status: oldStatus },
-        newValue: { job_status: "payment_authorization_required", assigned_driver_id: driverId },
+      const { data, error } = await supabase.functions.invoke("accept-driver-offer", {
+        body: { offerId, source: "dispatcher" },
       });
 
-      // Surface pricing warning if missing
-      if (!hasPricing) {
-        await createAuditAndEvent(jobId, {
-          auditActionType: "Pricing missing — payment cannot proceed until dispatcher sets price",
-          auditEventType: "system_event",
-          auditEventSource: "dispatch_engine",
-          eventType: "pricing_missing_warning",
-          eventCategory: "exception",
-          message: "Driver assigned but estimated_price is missing or zero. Customer payment SMS will NOT be sent. Dispatcher must set price before payment can proceed.",
-        });
-      }
+      if (error) throw new Error(error.message || "Acceptance failed");
+      if (!data?.success) throw new Error(data?.error || "Acceptance failed");
+
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
