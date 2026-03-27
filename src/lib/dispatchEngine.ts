@@ -49,6 +49,21 @@ export interface FilterOptions {
   excludeDriverIds?: Set<string>;
 }
 
+const E164_PHONE_REGEX = /^\+[1-9]\d{7,14}$/;
+
+export function isLikelyDeliverableSmsPhone(phone: string | null | undefined): boolean {
+  if (!phone) return false;
+
+  const normalizedPhone = phone.trim();
+  if (!E164_PHONE_REGEX.test(normalizedPhone)) return false;
+
+  if (normalizedPhone.startsWith("+1")) {
+    return /^\+1\d{10}$/.test(normalizedPhone) && !normalizedPhone.startsWith("+1555");
+  }
+
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Module 1 — Job Validation
 // ---------------------------------------------------------------------------
@@ -189,6 +204,7 @@ export function filterEligibleDrivers(
     if (!eligibleDriverIds.has(d.driver_id)) return false;
     if (d.availability_status !== "available") return false;
     if ((d.reliability_score ?? 0) < minReliability) return false;
+    if (!isLikelyDeliverableSmsPhone(d.phone)) return false;
 
     if (!hasJobCoordinates || jobLat === null || jobLng === null) {
       return true;

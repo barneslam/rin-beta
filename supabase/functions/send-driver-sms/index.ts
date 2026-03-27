@@ -9,6 +9,28 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const E164_PHONE_REGEX = /^\+[1-9]\d{7,14}$/;
+
+class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function isLikelyDeliverableSmsPhone(phone: string): boolean {
+  const normalizedPhone = phone.trim();
+  if (!E164_PHONE_REGEX.test(normalizedPhone)) return false;
+
+  if (normalizedPhone.startsWith("+1")) {
+    return /^\+1\d{10}$/.test(normalizedPhone) && !normalizedPhone.startsWith("+1555");
+  }
+
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -61,8 +83,26 @@ serve(async (req) => {
       .single();
     if (driverErr || !driver) throw new Error("Driver not found");
     if (!driver.phone) throw new Error("Driver has no phone number");
-    if (!/^\+[1-9]\d{6,14}$/.test(driver.phone)) {
-      throw new Error(`Driver phone "${driver.phone}" is not a valid E.164 number (must start with + and country code, e.g. +15551234567)`);
+    const driverPhone = driver.phone.trim();
+    if (!isLikelyDeliverableSmsPhone(driverPhone)) {
+      const now = new Date().toISOString();
+      await Promise.all([
+        supabase.from("dispatch_offers").update({
+          sms_sent_at: now,
+          sms_delivery_status: "failed",
+        }).eq("offer_id", offerId),
+        supabase.from("drivers").update({
+          last_sms_sent_at: now,
+          sms_delivery_status: "failed",
+        }).eq("driver_id", driverId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "sms_delivery_failed",
+          event_category: "communication",
+          message: `Driver SMS skipped for ${driver.driver_name} (${driverPhone}) because the phone number is not a valid deliverable SMS target.`,
+        }),
+      ]);
+      throw new HttpError(400, `Driver phone "${driver.phone}" is not a valid deliverable SMS number`);
     }
 
     // Fetch incident type name
@@ -106,7 +146,7 @@ Reply YES to accept, NO to decline.`;
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        To: driver.phone,
+        To: driverPhone,
         From: TWILIO_PHONE_NUMBER,
         Body: smsBody,
       }),
@@ -129,7 +169,7 @@ Reply YES to accept, NO to decline.`;
           job_id: jobId,
           event_type: "sms_delivery_failed",
           event_category: "communication",
-          message: `Driver SMS to ${driver.driver_name} (${driver.phone}) failed: ${JSON.stringify(data)}`,
+          message: `Driver SMS to ${driver.driver_name} (${driverPhone}) failed: ${JSON.stringify(data)}`,
         }),
       ]);
       throw new Error(`Twilio API error [${response.status}]: ${JSON.stringify(data)}`);
@@ -150,11 +190,11 @@ Reply YES to accept, NO to decline.`;
         job_id: jobId,
         event_type: "driver_sms_sent",
         event_category: "communication",
-        message: `Offer SMS sent to ${driver.driver_name} (${driver.phone}) — Twilio SID: ${data.sid}`,
+          message: `Offer SMS sent to ${driver.driver_name} (${driverPhone}) — Twilio SID: ${data.sid}`,
       }),
     ]);
 
-    console.log(`[SMS] Driver ${driver.driver_name} (${driver.phone}) job=${jobId} offer=${offerId} SID=${data.sid}`);
+    console.log(`[SMS] Driver ${driver.driver_name} (${driverPhone}) job=${jobId} offer=${offerId} SID=${data.sid}`);
 
     return new Response(JSON.stringify({ success: true, sid: data.sid }), {
       status: 200,
@@ -163,8 +203,9 @@ Reply YES to accept, NO to decline.`;
   } catch (error: unknown) {
     console.error("Error sending driver SMS:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const status = error instanceof HttpError ? error.status : 500;
     return new Response(JSON.stringify({ success: false, error: errorMessage }), {
-      status: 500,
+      status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
