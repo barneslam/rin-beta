@@ -81,6 +81,18 @@ export default function CustomerFormIntake() {
     }
   }
 
+  function isValidE164(phone: string): boolean {
+    return /^\+[1-9]\d{6,14}$/.test(phone.replace(/[\s\-()]/g, ""));
+  }
+
+  function normalizePhone(phone: string): string {
+    const digits = phone.replace(/[\s\-()]/g, "");
+    // If user typed 10 digits without +1, assume North America
+    if (/^\d{10}$/.test(digits)) return `+1${digits}`;
+    if (/^1\d{10}$/.test(digits)) return `+${digits}`;
+    return digits.startsWith("+") ? digits : `+${digits}`;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -105,7 +117,7 @@ export default function CustomerFormIntake() {
       tow_required: towRequired,
       destination_text: towRequired ? destination : null,
       caller_name: callerName,
-      caller_phone: callerPhone,
+      caller_phone: normalizePhone(callerPhone),
       field_confidence: {
         location: gpsLat != null ? ("high" as const) : ("medium" as const),
         incident: incidentDesc ? ("high" as const) : ("low" as const),
@@ -118,6 +130,13 @@ export default function CustomerFormIntake() {
 
     if (!result.ready) {
       toast.error(`Please provide: ${result.missingFieldLabels.join(", ")}`);
+      return;
+    }
+
+    // Validate phone is E.164 after normalization
+    const normalizedPhone = normalizePhone(callerPhone);
+    if (!isValidE164(normalizedPhone)) {
+      toast.error("Please enter a valid phone number (e.g. +14165551234)");
       return;
     }
 
@@ -373,7 +392,7 @@ export default function CustomerFormIntake() {
           <Label className="text-sidebar-foreground">Your info</Label>
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Name (optional)" value={callerName} onChange={(e) => setCallerName(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
-            <Input placeholder="Phone *" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
+            <Input placeholder="+1 416 555 1234" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
           </div>
         </div>
 
