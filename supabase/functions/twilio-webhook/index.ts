@@ -42,23 +42,58 @@ serve(async (req) => {
 
     const from = normalizePhone(rawFrom);
 
-    console.log(`[WEBHOOK] Inbound SMS — raw_from="${rawFrom}" normalized="${from}" body="${rawBody}" sid=${messageSid}`);
+    // Structured entry log — one line per inbound SMS, all key fields present
+    const log: Record<string, unknown> = {
+      sid: messageSid,
+      body: rawBody,
+      raw_from: rawFrom,
+      normalized_from: from,
+      driver_lookup_phone_used: null as string | null,
+      driver_lookup_result: "miss" as "hit_e164" | "hit_fallback" | "miss" | "ambiguous",
+      customer_lookup_result: "miss" as "hit" | "miss",
+      final_response_branch: null as string | null,
+    };
 
     if (!from || from === "+") {
+      log.final_response_branch = "invalid_phone";
+      console.log("[WEBHOOK]", JSON.stringify(log));
       return twimlResponse("We couldn't identify your phone number.");
     }
 
     // -----------------------------------------------------------------------
     // 1. Check if sender is a DRIVER
+    //    Primary: E.164 exact match. Fallback: last-10-digits match for phones
+    //    that may have been stored without full normalization in the DB.
     // -----------------------------------------------------------------------
-    const { data: driver } = await supabase
+    log.driver_lookup_phone_used = from;
+
+    let { data: driver } = await supabase
       .from("drivers")
-      .select("driver_id, driver_name")
+      .select("driver_id, driver_name, phone")
       .eq("phone", from)
-      .single();
+      .maybeSingle();
 
     if (driver) {
-      console.log(`[WEBHOOK] Matched driver — id=${driver.driver_id} name=${driver.driver_name}`);
+      log.driver_lookup_result = "hit_e164";
+    } else {
+      // Fallback: match on trailing 10 digits to tolerate minor format drift
+      const digits10 = from.replace(/\D/g, "").slice(-10);
+      const { data: fallbackRows } = await supabase
+        .from("drivers")
+        .select("driver_id, driver_name, phone")
+        .ilike("phone", `%${digits10}`);
+      if (fallbackRows && fallbackRows.length === 1) {
+        driver = fallbackRows[0];
+        log.driver_lookup_result = "hit_fallback";
+        log.driver_lookup_phone_used = digits10;
+      } else if (fallbackRows && fallbackRows.length > 1) {
+        log.driver_lookup_result = "ambiguous";
+      }
+    }
+
+    if (driver) {
+      log.final_response_branch = "driver_reply";
+      console.log("[WEBHOOK]", JSON.stringify(log));
       return await handleDriverReply(supabase, driver, rawBody, from, messageSid);
     }
 
@@ -72,11 +107,14 @@ serve(async (req) => {
       .single();
 
     if (customer) {
-      console.log(`[WEBHOOK] Matched customer — id=${customer.user_id} name=${customer.name}`);
+      log.customer_lookup_result = "hit";
+      log.final_response_branch = "customer_reply";
+      console.log("[WEBHOOK]", JSON.stringify(log));
       return await handleCustomerReply(supabase, customer, rawBody, from, messageSid);
     }
 
-    console.log(`[WEBHOOK] No match for phone=${from}`);
+    log.final_response_branch = "unregistered";
+    console.log("[WEBHOOK]", JSON.stringify(log));
     return twimlResponse("This number is not registered with RIN. Visit rin-beta.lovable.app to get help.");
   } catch (error) {
     console.error("[WEBHOOK] Unhandled error:", error);
@@ -149,36 +187,44 @@ async function handleDriverReply(
   // ACCEPT via shared accept-driver-offer function
   // -----------------------------------------------------------------------
   if (DRIVER_ACCEPT_KEYWORDS.has(body)) {
-    console.log(`[WEBHOOK] Driver ${driver.driver_name} accepting offer ${offer.offer_id} via SMS`);
+    console.log(`[WEBHOOK] Driver ${driver.driver_name} accepting offer ${offer.offer_id} via SMS — job=${offer.job_id}`);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const acceptResp = await fetch(`${SUPABASE_URL}/functions/v1/accept-driver-offer`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ offerId: offer.offer_id, source: "sms" }),
-    });
+    let acceptStatus = 500;
+    let acceptData: Record<string, unknown> = {};
+    try {
+      const acceptResp = await fetch(`${SUPABASE_URL}/functions/v1/accept-driver-offer`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ offerId: offer.offer_id, source: "sms" }),
+      });
+      acceptStatus = acceptResp.status;
+      acceptData = await acceptResp.json();
+    } catch (fetchErr) {
+      console.error(`[WEBHOOK] accept-driver-offer fetch threw — offer=${offer.offer_id} error=${fetchErr}`);
+      return twimlResponse("Something went wrong accepting the offer. Please use the link in your original message.");
+    }
 
-    const acceptData = await acceptResp.json();
-    console.log(`[WEBHOOK] accept-driver-offer response — status=${acceptResp.status} success=${acceptData.success}`);
+    console.log(`[WEBHOOK] accept-driver-offer response — status=${acceptStatus} body=${JSON.stringify(acceptData)}`);
 
     if (acceptData.success) {
       return twimlResponse("You've accepted the job! Check the app for details.");
     }
 
     // Handle specific failure cases
-    if (acceptResp.status === 410) {
+    if (acceptStatus === 410) {
       return twimlResponse("This offer has expired and is no longer active.");
     }
-    if (acceptResp.status === 409) {
+    if (acceptStatus === 409) {
       return twimlResponse(`This offer has already been ${acceptData.status || "responded to"}.`);
     }
 
-    console.error(`[WEBHOOK] Acceptance failed: ${acceptData.error}`);
+    console.error(`[WEBHOOK] Acceptance failed — offer=${offer.offer_id} status=${acceptStatus} error=${acceptData.error}`);
     return twimlResponse("Something went wrong accepting the offer. Please use the link in your original message.");
   }
 

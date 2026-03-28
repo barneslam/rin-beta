@@ -21,7 +21,9 @@ const OFFER_EXPIRY_SECONDS = 150;
 const DriverOffer = () => {
   const { activeJobId } = useActiveJob();
   const { data: job } = useJob(activeJobId);
-  const { data: offers } = useDispatchOffers(activeJobId ?? undefined);
+  // Poll every 5 s so the card always reflects actual DB state.
+  // This prevents stale-cache ghost offers when the browser-side timer fires.
+  const { data: offers, isLoading: offersLoading } = useDispatchOffers(activeJobId ?? undefined, 5000);
   const { data: drivers } = useDrivers();
   const { data: trucks } = useTrucks();
   const { data: incidentTypes } = useIncidentTypes();
@@ -310,8 +312,8 @@ const DriverOffer = () => {
         </Card>
       )}
 
-      {/* No offers yet */}
-      {(!offers || offers.length === 0) && !isEscalated && (
+      {/* No offers yet — only render when DB query has settled */}
+      {!offersLoading && (!offers || offers.length === 0) && !pendingOffer && !isEscalated && (
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-sm text-muted-foreground">

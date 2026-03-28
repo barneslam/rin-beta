@@ -78,10 +78,12 @@ export function usePricingRules() {
   });
 }
 
-export function useDispatchOffers(jobId?: string) {
+export function useDispatchOffers(jobId?: string, refetchInterval?: number | false) {
   return useQuery({
     queryKey: ["dispatch_offers", jobId],
     enabled: !!jobId,
+    // Default: no polling. Pass refetchInterval (ms) to enable live sync.
+    refetchInterval: refetchInterval ?? false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("dispatch_offers")

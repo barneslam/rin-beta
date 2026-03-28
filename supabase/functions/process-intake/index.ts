@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizePhone, validatePhone } from "../_shared/phone.ts";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
 
@@ -81,7 +82,21 @@ serve(async (req) => {
 
     // 4. Find-or-create user by phone (avoid duplicates for repeat callers)
     let userId: string;
-    const callerPhone = payload.caller_phone || null;
+
+    // Normalize incoming phone to E.164 before any DB lookup or storage
+    const rawCallerPhone = payload.caller_phone || null;
+    let callerPhone: string | null = null;
+    if (rawCallerPhone) {
+      const phoneCheck = validatePhone(rawCallerPhone);
+      if (phoneCheck.valid) {
+        callerPhone = phoneCheck.e164;
+        console.log(`[INTAKE] Phone normalized — raw="${rawCallerPhone}" e164="${callerPhone}"`);
+      } else {
+        // Store normalized as best-effort but log warning — do not block intake
+        callerPhone = normalizePhone(rawCallerPhone) || rawCallerPhone;
+        console.warn(`[INTAKE] Phone is invalid (${phoneCheck.reason}) — raw="${rawCallerPhone}" stored_as="${callerPhone}" — intake continues`);
+      }
+    }
 
     if (callerPhone) {
       const { data: existing } = await supabase
@@ -463,11 +478,12 @@ async function runServerDispatch(
     }),
   ]);
 
-  // Send driver SMS (fire and forget — call the existing send-driver-sms function)
+  // Send driver SMS — must succeed after offer insert is confirmed
+  let smsResult: "sent" | "failed" | "invoke_error" = "invoke_error";
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_URL_SMS = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    await fetch(`${SUPABASE_URL}/functions/v1/send-driver-sms`, {
+    const smsResp = await fetch(`${SUPABASE_URL_SMS}/functions/v1/send-driver-sms`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -479,11 +495,21 @@ async function runServerDispatch(
         driverId: pick.driver.driver_id,
       }),
     });
+    const smsBody = await smsResp.json().catch(() => ({}));
+    if (smsResp.ok && smsBody.success) {
+      smsResult = "sent";
+    } else {
+      smsResult = "failed";
+      console.error(`[INTAKE-DISPATCH] SMS failed — job_id=${jobId} offer_id=${offer.offer_id} driver_id=${pick.driver.driver_id} status=${smsResp.status} error=${smsBody.error ?? "unknown"}`);
+    }
   } catch (e) {
-    console.error("Driver SMS invoke failed:", e);
+    smsResult = "invoke_error";
+    console.error(`[INTAKE-DISPATCH] SMS invoke threw — job_id=${jobId} offer_id=${offer.offer_id} driver_id=${pick.driver.driver_id} error=${e}`);
   }
 
-  return { escalated: false, driverName: pick.driver.driver_name, offerId: offer.offer_id };
+  console.log(`[INTAKE-DISPATCH] Complete — job_id=${jobId} driver_id=${pick.driver.driver_id} offer_id=${offer.offer_id} offer_status=pending sms=${smsResult}`);
+
+  return { escalated: false, driverName: pick.driver.driver_name, offerId: offer.offer_id, smsResult };
 }
 
 async function sendCustomerSms(to: string, body: string) {

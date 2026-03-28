@@ -261,19 +261,16 @@ export function useAutoDispatchOffer() {
       const pick = available[0];
       const expiresAt = new Date(Date.now() + OFFER_EXPIRY_SECONDS * 1000).toISOString();
 
-      // 7. Create offer
-      const { data: offer, error: offerErr } = await supabase
-        .from("dispatch_offers")
-        .insert({
-          job_id: jobId,
-          driver_id: pick.driver.driver_id,
-          truck_id: pick.truck.truck_id,
-          offer_status: "pending",
-          expires_at: expiresAt,
-        })
-        .select()
-        .single();
-      if (offerErr) throw offerErr;
+      // 7. Create offer — via server-side Edge Function for audit trail + confirmed persistence
+      const { data: createResp, error: createFnErr } = await supabase.functions.invoke(
+        "create-dispatch-offer",
+        { body: { jobId, driverId: pick.driver.driver_id, truckId: pick.truck.truck_id, expiresAt } }
+      );
+      if (createFnErr) throw new Error(`create-dispatch-offer failed: ${createFnErr.message}`);
+      if (!createResp?.success) throw new Error(`create-dispatch-offer returned error: ${createResp?.error ?? "unknown"} (code: ${createResp?.code ?? "?"})`);
+
+      const offer = createResp.offer;
+      console.log(`[DISPATCH] Offer confirmed in DB — offer_id=${offer.offer_id} job_id=${offer.job_id} driver_id=${offer.driver_id} offer_status=${offer.offer_status}`);
 
       // 8. Update job — set reservation + status
       await supabase
@@ -297,16 +294,19 @@ export function useAutoDispatchOffer() {
         newValue: { driver_id: pick.driver.driver_id, wave: currentWave, attempt: waveAttempt },
       });
 
-      // 10. Fire-and-forget SMS notification to driver
+      // 10. Fire-and-forget SMS notification to driver (offer insert already confirmed above)
       supabase.functions
         .invoke("send-driver-sms", {
           body: { offerId: offer.offer_id, jobId, driverId: pick.driver.driver_id },
         })
         .then((res) => {
-          if (res.error) console.error("SMS send failed:", res.error);
-          else console.log("SMS sent to driver", pick.driver.driver_name);
+          if (res.error) {
+            console.error(`[DISPATCH] SMS failed — job_id=${jobId} offer_id=${offer.offer_id} driver_id=${pick.driver.driver_id} error=${res.error.message}`);
+          } else {
+            console.log(`[DISPATCH] SMS sent — job_id=${jobId} offer_id=${offer.offer_id} driver_id=${pick.driver.driver_id} driver=${pick.driver.driver_name} sid=${res.data?.sid ?? "unknown"}`);
+          }
         })
-        .catch((err) => console.error("SMS invoke error:", err));
+        .catch((err) => console.error(`[DISPATCH] SMS invoke threw — job_id=${jobId} offer_id=${offer.offer_id} error=${err}`));
 
       return {
         escalated: false,

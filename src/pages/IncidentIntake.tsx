@@ -5,10 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useActiveJob } from "@/context/JobContext";
-import { useCreateJob } from "@/hooks/useJobs";
 import { useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
-import { findOrCreateUserByPhone } from "@/hooks/useCreateCustomerUser";
 import { useDeviceLocation } from "@/hooks/useDeviceLocation";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Navigation, Loader2, CheckCircle2, MapPin } from "lucide-react";
 
@@ -23,10 +22,10 @@ const LOCATION_TYPES = [
 
 const IncidentIntake = () => {
   const { setActiveJobId } = useActiveJob();
-  const createJob = useCreateJob();
   const { data: incidentTypes } = useIncidentTypes();
   const { data: truckTypes } = useTruckTypes();
   const geo = useDeviceLocation();
+  const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     caller_phone: "",
@@ -85,41 +84,47 @@ const IncidentIntake = () => {
       toast.error("Please select an incident type");
       return;
     }
-    // Need either GPS or typed location
     const hasGps = form.gps_lat && form.gps_long;
     if (!hasGps && !form.pickup_location.trim()) {
       toast.error("Please provide a location (use device GPS or enter an address)");
       return;
     }
 
+    setSubmitting(true);
     try {
-      // Find or create user by phone
-      const userId = await findOrCreateUserByPhone({
-        phone: form.caller_phone,
-        name: form.caller_name || undefined,
-        vehicleMake: form.vehicle_make || undefined,
-        vehicleModel: form.vehicle_model || undefined,
-        vehicleYear: form.vehicle_year ? Number(form.vehicle_year) : undefined,
+      // Steps 1 + 2 are enforced server-side:
+      //   [INTAKE-JOB] Step 1 — phone normalize + users upsert
+      //   [INTAKE-JOB] Step 2 — jobs insert (only runs if Step 1 succeeds)
+      // UI does not advance unless the Edge Function returns success: true.
+      const { data, error } = await supabase.functions.invoke("intake-create-job", {
+        body: {
+          phone: form.caller_phone,
+          name: form.caller_name || undefined,
+          vehicleMake: form.vehicle_make || undefined,
+          vehicleModel: form.vehicle_model || undefined,
+          vehicleYear: form.vehicle_year ? Number(form.vehicle_year) : undefined,
+          incidentTypeId: form.incident_type_id || undefined,
+          pickupLocation: form.pickup_location || undefined,
+          gpsLat: form.gps_lat ? Number(form.gps_lat) : undefined,
+          gpsLong: form.gps_long ? Number(form.gps_long) : undefined,
+          locationType: form.location_type || "roadside",
+          requiredTruckTypeId: selectedIncident?.default_truck_type_id || undefined,
+          requiredEquipment: selectedIncident?.requires_special_equipment || [],
+        },
       });
 
-      const job = await createJob.mutateAsync({
-        user_id: userId,
-        incident_type_id: form.incident_type_id || undefined,
-        pickup_location: form.pickup_location || undefined,
-        gps_lat: form.gps_lat ? Number(form.gps_lat) : undefined,
-        gps_long: form.gps_long ? Number(form.gps_long) : undefined,
-        vehicle_make: form.vehicle_make || undefined,
-        vehicle_model: form.vehicle_model || undefined,
-        vehicle_year: form.vehicle_year ? Number(form.vehicle_year) : undefined,
-        required_truck_type_id: selectedIncident?.default_truck_type_id || undefined,
-        required_equipment: selectedIncident?.requires_special_equipment || [],
-        location_type: form.location_type || "roadside",
-        job_status: "intake_completed",
-      });
-      setActiveJobId(job.job_id);
-      toast.success("Job created", { description: `Job ${job.job_id.slice(0, 8)} started` });
+      if (error || !data?.success) {
+        const reason = (data?.error as string) ?? error?.message ?? "Unknown error";
+        toast.error("Failed to create job", { description: reason });
+        return;
+      }
+
+      setActiveJobId(data.job_id as string);
+      toast.success("Job created", { description: `Job ${(data.job_id as string).slice(0, 8)} started` });
     } catch (err) {
       toast.error("Failed to create job");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -272,8 +277,8 @@ const IncidentIntake = () => {
         </Card>
       </div>
 
-      <Button onClick={handleSubmit} disabled={createJob.isPending} className="w-full md:w-auto">
-        {createJob.isPending ? "Creating..." : "Create Job"}
+      <Button onClick={handleSubmit} disabled={submitting} className="w-full md:w-auto">
+        {submitting ? "Creating..." : "Create Job"}
       </Button>
     </div>
   );

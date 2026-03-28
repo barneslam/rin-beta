@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validatePhone } from "../_shared/phone.ts";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
 
@@ -125,15 +126,26 @@ serve(async (req) => {
     if (source === "sms") {
       offerUpdate.sms_delivery_status = "responded";
     }
-    await supabase.from("dispatch_offers").update(offerUpdate).eq("offer_id", offerId);
+    const { error: offerUpdateErr } = await supabase
+      .from("dispatch_offers")
+      .update(offerUpdate)
+      .eq("offer_id", offerId);
+    if (offerUpdateErr) {
+      console.error(`[ACCEPT] FAILED to mark offer accepted — offerId=${offerId} error=${offerUpdateErr.message}`);
+      return jsonResponse({ success: false, error: `DB error updating offer: ${offerUpdateErr.message}` }, 500);
+    }
+    console.log(`[ACCEPT] Offer marked accepted — offerId=${offerId}`);
 
     // 4b. Expire all other pending offers for this job
-    await supabase
+    const { error: expireErr } = await supabase
       .from("dispatch_offers")
       .update({ offer_status: "expired" })
       .eq("job_id", offer.job_id)
       .neq("offer_id", offerId)
       .eq("offer_status", "pending");
+    if (expireErr) {
+      console.warn(`[ACCEPT] Non-fatal: could not expire sibling offers — job=${offer.job_id} error=${expireErr.message}`);
+    }
 
     // 4c. Update driver response tracking (SMS source)
     if (source === "sms") {
@@ -143,13 +155,27 @@ serve(async (req) => {
     }
 
     // 4d. Assign driver to job — transition to payment_authorization_required
-    await supabase.from("jobs").update({
+    // step_deadline_at = now + 30 min, matching check-payment-timeout EXPIRY_MINUTES
+    const paymentDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const { error: jobUpdateErr } = await supabase.from("jobs").update({
       assigned_driver_id: offer.driver_id,
       assigned_truck_id: offer.truck_id,
       job_status: "payment_authorization_required",
       reserved_driver_id: null,
       reservation_expires_at: null,
+      step_deadline_at: paymentDeadline,
+      exception_code: null,
+      exception_message: null,
     }).eq("job_id", offer.job_id);
+    if (jobUpdateErr) {
+      console.error(`[ACCEPT] FAILED to update job — job=${offer.job_id} error=${jobUpdateErr.message} code=${jobUpdateErr.code}`);
+      return jsonResponse({
+        success: false,
+        error: `DB error updating job: ${jobUpdateErr.message}`,
+        jobId: offer.job_id,
+        offerId,
+      }, 500);
+    }
 
     console.log(`[ACCEPT] State transitions complete — driver=${driverName} job=${offer.job_id} newStatus=payment_authorization_required`);
 
@@ -182,68 +208,137 @@ serve(async (req) => {
     ]);
 
     // -----------------------------------------------------------------------
-    // 6. Handle pricing availability
+    // 6. Send payment SMS to customer (if pricing is available)
     // -----------------------------------------------------------------------
-    if (hasPricing) {
-      // Send payment SMS to customer
-      try {
-        if (currentJob?.user_id) {
-          const { data: user } = await supabase
-            .from("users")
-            .select("phone")
-            .eq("user_id", currentJob.user_id)
-            .single();
+    let paymentSmsStatus: "sent" | "no_pricing" | "invalid_phone" | "send_failed" | "no_credentials" = "no_pricing";
+    let customerPhone: string | null = null;
 
-          if (user?.phone) {
-            const price = Number(currentJob.estimated_price);
-            const payLink = `https://rin-beta.lovable.app/pay/${offer.job_id}`;
-            const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
+    if (hasPricing && currentJob?.user_id) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("user_id", currentJob.user_id)
+        .single();
 
-            const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-            const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
-            const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+      const rawPhone = user?.phone ?? "";
+      customerPhone = rawPhone || null;
+      const phoneCheck = validatePhone(rawPhone);
+      console.log(`[ACCEPT] Payment SMS phone check — raw="${rawPhone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"}`);
 
-            if (LOVABLE_API_KEY && TWILIO_API_KEY && TWILIO_PHONE_NUMBER) {
-              const smsResp = await fetch(`${GATEWAY_URL}/Messages.json`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                  "X-Connection-Api-Key": TWILIO_API_KEY,
-                  "Content-Type": "application/x-www-form-urlencoded",
-                },
-                body: new URLSearchParams({ To: user.phone, From: TWILIO_PHONE_NUMBER, Body: smsBody }),
+      if (!phoneCheck.valid) {
+        // Phone is bad — set exception so dispatcher can fix manually
+        const exMsg = `Customer phone "${rawPhone}" is invalid (${phoneCheck.reason}) — payment SMS blocked after driver acceptance`;
+        console.error(`[ACCEPT] ${exMsg}`);
+        paymentSmsStatus = "invalid_phone";
+
+        await Promise.all([
+          supabase.from("jobs").update({
+            exception_code: "invalid_customer_phone",
+            exception_message: exMsg,
+          }).eq("job_id", offer.job_id),
+          supabase.from("job_events").insert({
+            job_id: offer.job_id,
+            event_type: "payment_sms_blocked",
+            event_category: "exception",
+            message: exMsg,
+            new_value: { exception_code: "invalid_customer_phone", raw_phone: rawPhone, reason: phoneCheck.reason },
+          }),
+        ]);
+      } else {
+        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+        const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
+        const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+        if (!LOVABLE_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) {
+          console.error("[ACCEPT] Payment SMS skipped — SMS credentials not configured");
+          paymentSmsStatus = "no_credentials";
+        } else {
+          const price = Number(currentJob.estimated_price);
+          const payLink = `https://rin-beta.lovable.app/pay/${offer.job_id}`;
+          const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
+
+          try {
+            const smsResp = await fetch(`${GATEWAY_URL}/Messages.json`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                "X-Connection-Api-Key": TWILIO_API_KEY,
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER, Body: smsBody }),
+            });
+
+            if (smsResp.ok) {
+              const smsData = await smsResp.json();
+              console.log(`[ACCEPT] Payment SMS sent — to=${phoneCheck.e164} SID=${smsData.sid}`);
+              paymentSmsStatus = "sent";
+
+              await supabase.from("job_events").insert({
+                job_id: offer.job_id,
+                event_type: "payment_sms_sent",
+                event_category: "payment",
+                message: `Payment SMS sent to ${phoneCheck.e164} ($${price.toFixed(2)}) — SID: ${smsData.sid}`,
               });
+            } else {
+              const errBody = await smsResp.text();
+              const exMsg = `Payment SMS to ${phoneCheck.e164} failed — Twilio [${smsResp.status}]: ${errBody.slice(0, 200)}`;
+              console.error(`[ACCEPT] ${exMsg}`);
+              paymentSmsStatus = "send_failed";
 
-              if (smsResp.ok) {
-                const smsData = await smsResp.json();
-                console.log(`[ACCEPT] Payment SMS sent to ${user.phone} SID=${smsData.sid}`);
-                await supabase.from("job_events").insert({
+              await Promise.all([
+                supabase.from("jobs").update({
+                  exception_code: "payment_sms_failed",
+                  exception_message: `Dispatcher must resend payment link manually. Twilio error [${smsResp.status}].`,
+                }).eq("job_id", offer.job_id),
+                supabase.from("job_events").insert({
                   job_id: offer.job_id,
-                  event_type: "payment_sms_sent",
-                  event_category: "payment",
-                  message: `Payment SMS sent to customer ($${price.toFixed(2)}) — SID: ${smsData.sid}`,
-                });
-              } else {
-                console.error(`[ACCEPT] Payment SMS failed: ${smsResp.status}`);
-              }
+                  event_type: "payment_sms_failed",
+                  event_category: "exception",
+                  message: exMsg,
+                  new_value: { exception_code: "payment_sms_failed", to: phoneCheck.e164, twilio_status: smsResp.status },
+                }),
+              ]);
             }
+          } catch (smsErr) {
+            const exMsg = `Payment SMS threw unexpectedly: ${smsErr}`;
+            console.error(`[ACCEPT] ${exMsg}`);
+            paymentSmsStatus = "send_failed";
+
+            await Promise.all([
+              supabase.from("jobs").update({
+                exception_code: "payment_sms_failed",
+                exception_message: "Unexpected error sending payment SMS — dispatcher must resend manually.",
+              }).eq("job_id", offer.job_id),
+              supabase.from("job_events").insert({
+                job_id: offer.job_id,
+                event_type: "payment_sms_failed",
+                event_category: "exception",
+                message: exMsg,
+                new_value: { exception_code: "payment_sms_failed" },
+              }),
+            ]);
           }
         }
-      } catch (e) {
-        console.error("[ACCEPT] Payment SMS error:", e);
       }
-    } else {
-      // Log pricing missing warning
+    } else if (!hasPricing) {
       console.log(`[ACCEPT] Pricing missing for job ${offer.job_id} — payment SMS withheld`);
+      await supabase.from("jobs").update({
+        exception_code: "pricing_missing",
+        exception_message: "Driver accepted but estimated_price is not set. Dispatcher must set price and send payment link.",
+      }).eq("job_id", offer.job_id);
+
       await supabase.from("job_events").insert({
         job_id: offer.job_id,
         event_type: "pricing_missing_warning",
         event_category: "exception",
         message: `Driver ${driverName} accepted but estimated_price is missing. Payment SMS withheld — dispatcher must set price.`,
+        new_value: { exception_code: "pricing_missing" },
       });
     }
 
-    console.log(`[ACCEPT] Complete — offerId=${offerId} driver=${driverName} job=${offer.job_id} source=${source} pricingReady=${!!hasPricing}`);
+    console.log(`[ACCEPT] Payment SMS status — job=${offer.job_id} paymentSmsStatus=${paymentSmsStatus}`);
+
+    console.log(`[ACCEPT] Complete — offerId=${offerId} driver_id=${offer.driver_id} driver=${driverName} job_id=${offer.job_id} user_id=${currentJob?.user_id ?? "?"} phone="${customerPhone ?? "?"}" source=${source} offer_status=accepted job_status=payment_authorization_required paymentSms=${paymentSmsStatus}`);
 
     return jsonResponse({
       success: true,
@@ -252,6 +347,7 @@ serve(async (req) => {
       driverId: offer.driver_id,
       driverName,
       pricingReady: !!hasPricing,
+      paymentSmsStatus,
     });
   } catch (error: unknown) {
     console.error("[ACCEPT] Error:", error);

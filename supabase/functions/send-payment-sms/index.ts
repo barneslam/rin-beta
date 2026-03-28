@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validatePhone } from "../_shared/phone.ts";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
 
@@ -21,69 +22,96 @@ serve(async (req) => {
 
     const { jobId } = await req.json();
     if (!jobId) {
-      return new Response(
-        JSON.stringify({ success: false, error: "jobId is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResp({ success: false, error: "jobId is required" }, 400);
     }
 
-    // Fetch job with user
+    console.log(`[PAYMENT-SMS] Starting — jobId=${jobId}`);
+
+    // Fetch job
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
       .select("job_id, estimated_price, user_id, job_status")
       .eq("job_id", jobId)
       .single();
     if (jobErr || !job) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Job not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResp({ success: false, error: "Job not found" }, 404);
     }
 
     // Validate estimated_price
     const price = Number(job.estimated_price);
     if (!price || price <= 0) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Cannot send payment SMS: estimated_price is missing or invalid" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResp({
+        success: false,
+        error: "Cannot send payment SMS: estimated_price is missing or invalid",
+      }, 400);
     }
 
-    // Get customer phone
     if (!job.user_id) {
-      return new Response(
-        JSON.stringify({ success: false, error: "No user linked to this job" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResp({ success: false, error: "No user linked to this job" }, 400);
     }
 
+    // Fetch customer phone
     const { data: user } = await supabase
       .from("users")
       .select("phone")
       .eq("user_id", job.user_id)
       .single();
 
-    if (!user?.phone) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Customer has no phone number on file" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const rawPhone = user?.phone ?? "";
+
+    // ------------------------------------------------------------------
+    // Phone validation — hard block before any SMS attempt
+    // ------------------------------------------------------------------
+    const phoneCheck = validatePhone(rawPhone);
+    console.log(
+      `[PAYMENT-SMS] Phone check — raw="${rawPhone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"}`
+    );
+
+    if (!phoneCheck.valid) {
+      const exMsg = `Customer phone "${rawPhone}" is invalid (${phoneCheck.reason}) — payment SMS blocked`;
+      console.error(`[PAYMENT-SMS] EXCEPTION: ${exMsg} — jobId=${jobId}`);
+
+      await Promise.all([
+        supabase.from("jobs").update({
+          exception_code: "invalid_customer_phone",
+          exception_message: exMsg,
+        }).eq("job_id", jobId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "payment_sms_blocked",
+          event_category: "exception",
+          message: exMsg,
+          new_value: {
+            exception_code: "invalid_customer_phone",
+            raw_phone: rawPhone,
+            reason: phoneCheck.reason,
+          },
+        }),
+      ]);
+
+      return jsonResp({
+        success: false,
+        error: exMsg,
+        exception_code: "invalid_customer_phone",
+      }, 400);
     }
 
-    // Send SMS with price included
-    const payLink = `https://rin-beta.lovable.app/pay/${job.job_id}`;
-    const body = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
-
+    // ------------------------------------------------------------------
+    // Credentials check
+    // ------------------------------------------------------------------
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
     const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
 
     if (!LOVABLE_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) {
-      return new Response(
-        JSON.stringify({ success: false, error: "SMS credentials not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResp({ success: false, error: "SMS credentials not configured" }, 500);
     }
+
+    // ------------------------------------------------------------------
+    // Send SMS
+    // ------------------------------------------------------------------
+    const payLink = `https://rin-beta.lovable.app/pay/${job.job_id}`;
+    const body = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
     const smsResp = await fetch(`${GATEWAY_URL}/Messages.json`, {
       method: "POST",
@@ -92,32 +120,67 @@ serve(async (req) => {
         "X-Connection-Api-Key": TWILIO_API_KEY,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ To: user.phone, From: TWILIO_PHONE_NUMBER, Body: body }),
+      body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER, Body: body }),
     });
 
     if (!smsResp.ok) {
-      const err = await smsResp.text();
-      throw new Error(`Twilio error [${smsResp.status}]: ${err}`);
+      const errBody = await smsResp.text();
+      const exMsg = `Payment SMS to ${phoneCheck.e164} failed — Twilio [${smsResp.status}]: ${errBody.slice(0, 200)}`;
+      console.error(`[PAYMENT-SMS] EXCEPTION: ${exMsg} — jobId=${jobId}`);
+
+      // Set exception state — do NOT change job_status (driver is still assigned)
+      await Promise.all([
+        supabase.from("jobs").update({
+          exception_code: "payment_sms_failed",
+          exception_message: `Dispatcher must resend payment link manually. Twilio error [${smsResp.status}].`,
+        }).eq("job_id", jobId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "payment_sms_failed",
+          event_category: "exception",
+          message: exMsg,
+          new_value: {
+            exception_code: "payment_sms_failed",
+            to: phoneCheck.e164,
+            twilio_status: smsResp.status,
+          },
+        }),
+      ]);
+
+      return jsonResp({
+        success: false,
+        error: exMsg,
+        exception_code: "payment_sms_failed",
+      }, 502);
     }
 
-    // Log event
+    const smsData = await smsResp.json();
+    console.log(`[PAYMENT-SMS] Sent — jobId=${jobId} to=${phoneCheck.e164} SID=${smsData.sid}`);
+
+    // Clear any previous phone/SMS exception now that it succeeded
+    await supabase.from("jobs")
+      .update({ exception_code: null, exception_message: null })
+      .eq("job_id", jobId)
+      .in("exception_code", ["payment_sms_failed", "invalid_customer_phone"]);
+
     await supabase.from("job_events").insert({
       job_id: jobId,
       event_type: "payment_sms_sent",
       event_category: "payment",
-      message: `Payment SMS sent to customer ($${price.toFixed(2)})`,
+      message: `Payment SMS sent to ${phoneCheck.e164} ($${price.toFixed(2)}) — SID: ${smsData.sid}`,
     });
 
-    return new Response(
-      JSON.stringify({ success: true }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResp({ success: true, sid: smsData.sid });
   } catch (error: unknown) {
-    console.error("send-payment-sms error:", error);
+    console.error("[PAYMENT-SMS] Unhandled error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ success: false, error: msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResp({ success: false, error: msg }, 500);
   }
 });
+
+function jsonResp(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

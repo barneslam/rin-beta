@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validatePhone } from "../_shared/phone.ts";
+
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,12 +16,10 @@ serve(async (req) => {
   }
 
   try {
-    const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-    if (!TWILIO_ACCOUNT_SID) throw new Error("TWILIO_ACCOUNT_SID is not configured");
-
-    const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-    if (!TWILIO_AUTH_TOKEN) throw new Error("TWILIO_AUTH_TOKEN is not configured");
-
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
+    if (!TWILIO_API_KEY) throw new Error("TWILIO_API_KEY is not configured");
     const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
     if (!TWILIO_PHONE_NUMBER) throw new Error("TWILIO_PHONE_NUMBER is not configured");
 
@@ -27,7 +28,6 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { phone, jobId, userName, channel } = await req.json();
-
     if (!phone || !jobId) {
       return new Response(JSON.stringify({ error: "Missing phone or jobId" }), {
         status: 400,
@@ -35,24 +35,46 @@ serve(async (req) => {
       });
     }
 
-    if (!/^\+[1-9]\d{6,14}$/.test(phone)) {
-      return new Response(JSON.stringify({ error: `Phone "${phone}" is not valid E.164 format` }), {
+    // Validate phone — rejects non-E.164 AND fake/555 numbers
+    const phoneCheck = validatePhone(phone);
+    console.log(`[CONFIRM-SMS] Phone check — raw="${phone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"} jobId=${jobId}`);
+
+    if (!phoneCheck.valid) {
+      const exMsg = `Customer phone "${phone}" is invalid (${phoneCheck.reason}) — confirmation SMS blocked`;
+      console.error(`[CONFIRM-SMS] EXCEPTION: ${exMsg}`);
+
+      await Promise.all([
+        supabase.from("jobs").update({
+          exception_code: "invalid_customer_phone",
+          exception_message: exMsg,
+        }).eq("job_id", jobId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "confirmation_sms_blocked",
+          event_category: "exception",
+          message: exMsg,
+          new_value: { exception_code: "invalid_customer_phone", raw_phone: phone, reason: phoneCheck.reason },
+        }),
+      ]);
+
+      return new Response(JSON.stringify({ success: false, error: exMsg, exception_code: "invalid_customer_phone" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (channel === "voice") {
-      await supabase
-        .from("jobs")
-        .update({
-          sms_confirmed: true,
-          sms_confirmed_at: new Date().toISOString(),
-          confirmation_channel: "voice",
-        })
-        .eq("job_id", jobId);
+    // Use the normalized E.164 form for all downstream calls
+    const normalizedPhone = phoneCheck.e164;
 
-      console.log(`[SMS] Voice auto-confirm for job=${jobId} — no SMS sent`);
+    // Voice calls are auto-confirmed — no SMS needed
+    if (channel === "voice") {
+      await supabase.from("jobs").update({
+        sms_confirmed: true,
+        sms_confirmed_at: new Date().toISOString(),
+        confirmation_channel: "voice",
+      }).eq("job_id", jobId);
+
+      console.log(`[CONFIRM-SMS] Voice auto-confirm for job=${jobId} — no SMS sent`);
 
       return new Response(JSON.stringify({ success: true, autoConfirmed: true, channel: "voice" }), {
         status: 200,
@@ -60,6 +82,7 @@ serve(async (req) => {
       });
     }
 
+    // Chat uses lighter path — send SMS but also provide web confirm link
     const trackLink = `https://rin-beta.lovable.app/track/${jobId}`;
     const isChat = channel === "chat";
 
@@ -67,78 +90,81 @@ serve(async (req) => {
       ? `RIN: Your roadside request is confirmed. Track progress here: ${trackLink}\n\nIf you did not request this, reply CANCEL.`
       : `RIN: Reply YES to confirm your roadside assistance request for ${userName || "your vehicle"}.\n\nOr confirm here: ${trackLink}`;
 
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-    const basicAuth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-
-    const response = await fetch(twilioUrl, {
+    const response = await fetch(`${GATEWAY_URL}/Messages.json`, {
       method: "POST",
       headers: {
-        Authorization: `Basic ${basicAuth}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "X-Connection-Api-Key": TWILIO_API_KEY,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        To: phone,
+        To: normalizedPhone,
         From: TWILIO_PHONE_NUMBER,
         Body: smsBody,
       }),
     });
 
     const data = await response.json();
-
     if (!response.ok) {
-      await supabase.from("job_events").insert({
-        job_id: jobId,
-        event_type: "sms_delivery_failed",
-        event_category: "communication",
-        message: `Confirmation SMS to ${phone} failed: ${JSON.stringify(data)}`,
+      const exMsg = `Confirmation SMS to ${normalizedPhone} failed — Twilio [${response.status}]: ${JSON.stringify(data)}`;
+      console.error(`[CONFIRM-SMS] EXCEPTION: ${exMsg} — jobId=${jobId}`);
+
+      await Promise.all([
+        supabase.from("jobs").update({
+          exception_code: "confirmation_sms_failed",
+          exception_message: `Confirmation SMS failed [${response.status}] — customer may not be aware of their request`,
+        }).eq("job_id", jobId),
+        supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "confirmation_sms_failed",
+          event_category: "exception",
+          message: exMsg,
+          new_value: { exception_code: "confirmation_sms_failed", to: normalizedPhone, twilio_status: response.status },
+        }),
+      ]);
+
+      return new Response(JSON.stringify({ success: false, error: exMsg, exception_code: "confirmation_sms_failed" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-
-      throw new Error(`Twilio API error [${response.status}]: ${JSON.stringify(data)}`);
     }
 
+    // Update user tracking
     const { data: job } = await supabase.from("jobs").select("user_id").eq("job_id", jobId).single();
-
     if (job?.user_id) {
-      await supabase
-        .from("users")
-        .update({
-          last_sms_sent_at: new Date().toISOString(),
-        })
-        .eq("user_id", job.user_id);
+      await supabase.from("users").update({
+        last_sms_sent_at: new Date().toISOString(),
+      }).eq("user_id", job.user_id);
     }
 
+    // For chat channel, auto-confirm the job (lighter path — SMS is informational)
     if (isChat) {
-      await supabase
-        .from("jobs")
-        .update({
-          sms_confirmed: true,
-          sms_confirmed_at: new Date().toISOString(),
-          confirmation_channel: "chat",
-        })
-        .eq("job_id", jobId);
+      await supabase.from("jobs").update({
+        sms_confirmed: true,
+        sms_confirmed_at: new Date().toISOString(),
+        confirmation_channel: "chat",
+      }).eq("job_id", jobId);
     }
 
+    // Log event with Twilio SID
     await supabase.from("job_events").insert({
       job_id: jobId,
       event_type: "confirmation_sms_sent",
       event_category: "communication",
-      message: `Confirmation SMS sent to ${phone} (channel: ${channel || "form"}) — Twilio SID: ${data.sid}`,
+      message: `Confirmation SMS sent to ${normalizedPhone} (channel: ${channel || "form"}) — SID: ${data.sid}`,
     });
 
-    console.log(`[SMS] Customer ${phone} job=${jobId} channel=${channel || "form"} SID=${data.sid}`);
+    console.log(`[CONFIRM-SMS] Sent — customer=${normalizedPhone} job=${jobId} channel=${channel || "form"} SID=${data.sid}`);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        sid: data.sid,
-        autoConfirmed: isChat,
-        channel: channel || "form",
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({
+      success: true,
+      sid: data.sid,
+      autoConfirmed: isChat,
+      channel: channel || "form",
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error: unknown) {
     console.error("Error sending confirmation SMS:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
