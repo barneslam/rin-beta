@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useActiveJob } from "@/context/JobContext";
 import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { usePricingRules, useIncidentTypes } from "@/hooks/useReferenceData";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "sonner";
 import {
   DollarSign,

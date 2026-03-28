@@ -6,7 +6,7 @@ import {
   VAGUE_LOCATION_PATTERNS,
   LOCATION_COMPLETENESS_PROMPT,
 } from "@/types/intake";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 
 export interface IntakeProcessingResult {
   ready: boolean;

@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { useAutoDispatchOffer } from "@/hooks/useDispatchEngine";
 import { classifyIncident } from "@/lib/dispatchEngine";
 import { createAuditAndEvent } from "@/hooks/useJobEvents";
