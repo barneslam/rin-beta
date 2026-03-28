@@ -12,7 +12,7 @@ import { useActiveJob } from "@/context/JobContext";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus } from "@/types/rin";
 import { AlertTriangle, ExternalLink, Clock, CreditCard } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "@/hooks/use-toast";
 import { PAYMENT_WARNING_MINUTES } from "@/lib/paymentConstants";
 

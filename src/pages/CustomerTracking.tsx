@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { JOB_STATUS_LABELS } from "@/types/rin";
 import { useDriverLocation } from "@/hooks/useDriverLocation";
 import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle, Wrench } from "lucide-react";

@@ -14,7 +14,7 @@ import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { toast } from "sonner";
 import { createBlankPayload } from "@/types/intake";
 import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 
 const COMMON_ISSUES = [
   { label: "Flat tire", keyword: "flat tire" },

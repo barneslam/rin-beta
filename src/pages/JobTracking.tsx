@@ -9,7 +9,7 @@ import { useDriverLocation } from "@/hooks/useDriverLocation";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus, Job } from "@/types/rin";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { Check, Edit, RefreshCw, UserX, XCircle, CreditCard, AlertTriangle, MapPin, Clock } from "lucide-react";
 import { AmendJobDialog } from "@/components/dispatch/AmendJobDialog";
 import { ReassignmentDialog } from "@/components/dispatch/ReassignmentDialog";
