@@ -69,10 +69,9 @@ export default function CustomerFormIntake() {
 
   async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
     try {
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-        { headers: { "User-Agent": "RIN-Roadside-Intake/1.0" } }
-      );
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+        headers: { "User-Agent": "RIN-Roadside-Intake/1.0" },
+      });
       if (!resp.ok) return null;
       const data = await resp.json();
       return data.display_name || null;
@@ -143,10 +142,7 @@ export default function CustomerFormIntake() {
     setSubmitting(true);
     try {
       const processed = result.payload;
-      const incidentTypeId = matchIncidentTypeId(
-        processed.incident_description,
-        incidentTypes || []
-      );
+      const incidentTypeId = matchIncidentTypeId(processed.incident_description, incidentTypes || []);
 
       // Find or create user by phone
       const userId = await findOrCreateUserByPhone({
@@ -177,13 +173,19 @@ export default function CustomerFormIntake() {
       setCreatedJobId(job.job_id);
 
       // Send confirmation SMS (fire-and-forget)
-      supabase.functions.invoke("send-customer-confirmation", {
-        body: {
+      fetch("https://zyoszbmahxnfcokuzkuv.supabase.co/functions/v1/send-customer-confirmation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: "sb_publishable_3YPG-zwdGHhrKzxCYOMn7w_6iKaG75N",
+          Authorization: "sb_publishable_3YPG-zwdGHhrKzxCYOMn7w_6iKaG75N",
+        },
+        body: JSON.stringify({
           phone: processed.caller_phone,
           jobId: job.job_id,
           userName: processed.caller_name,
           channel: "form",
-        },
+        }),
       }).catch((err) => console.error("Confirmation SMS error:", err));
 
       setStep("confirming");
@@ -198,18 +200,23 @@ export default function CustomerFormIntake() {
     if (!createdJobId) return;
     setConfirmingWeb(true);
     try {
-      await supabase.from("jobs").update({
-        sms_confirmed: true,
-        sms_confirmed_at: new Date().toISOString(),
-        confirmation_channel: "web",
-      } as any).eq("job_id", createdJobId);
+      await supabase
+        .from("jobs")
+        .update({
+          sms_confirmed: true,
+          sms_confirmed_at: new Date().toISOString(),
+          confirmation_channel: "web",
+        } as any)
+        .eq("job_id", createdJobId);
 
-      await supabase.from("job_events" as any).insert([{
-        job_id: createdJobId,
-        event_type: "customer_confirmed_web",
-        event_category: "communication",
-        message: "Customer confirmed request via web button",
-      }] as any);
+      await supabase.from("job_events" as any).insert([
+        {
+          job_id: createdJobId,
+          event_type: "customer_confirmed_web",
+          event_category: "communication",
+          message: "Customer confirmed request via web button",
+        },
+      ] as any);
 
       setStep("confirmed");
 
@@ -238,20 +245,22 @@ export default function CustomerFormIntake() {
               </div>
               <h2 className="text-xl font-semibold text-sidebar-foreground">Confirm your request</h2>
               <p className="text-sidebar-foreground/70 text-sm">
-                We sent a confirmation SMS to <span className="font-medium text-sidebar-foreground">{callerPhone}</span>.
-                Reply <span className="font-bold">YES</span> to confirm, or tap the button below.
+                We sent a confirmation SMS to <span className="font-medium text-sidebar-foreground">{callerPhone}</span>
+                . Reply <span className="font-bold">YES</span> to confirm, or tap the button below.
               </p>
               <Button
                 onClick={handleWebConfirm}
                 disabled={confirmingWeb}
                 className="w-full h-14 text-lg font-semibold rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25"
               >
-                {confirmingWeb ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
+                {confirmingWeb ? (
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5 mr-2" />
+                )}
                 Confirm Now
               </Button>
-              <p className="text-xs text-sidebar-foreground/40">
-                Dispatch will begin after confirmation.
-              </p>
+              <p className="text-xs text-sidebar-foreground/40">Dispatch will begin after confirmation.</p>
             </>
           ) : (
             <>
@@ -268,16 +277,23 @@ export default function CustomerFormIntake() {
   }
 
   const geoLabel =
-    geo.status === "idle" ? "Use my location" :
-    geo.status === "requesting" ? "Getting location..." :
-    geo.status === "success" ? "Location captured ✓" :
-    geo.status === "denied" ? "Access denied — enter below" :
-    "Retry location";
+    geo.status === "idle"
+      ? "Use my location"
+      : geo.status === "requesting"
+        ? "Getting location..."
+        : geo.status === "success"
+          ? "Location captured ✓"
+          : geo.status === "denied"
+            ? "Access denied — enter below"
+            : "Retry location";
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col">
       <div className="p-4 flex items-center gap-3">
-        <button onClick={() => navigate("/get-help")} className="text-sidebar-accent-foreground/50 hover:text-sidebar-foreground transition-colors">
+        <button
+          onClick={() => navigate("/get-help")}
+          className="text-sidebar-accent-foreground/50 hover:text-sidebar-foreground transition-colors"
+        >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold text-sidebar-foreground">Request Help</h1>
@@ -293,7 +309,9 @@ export default function CustomerFormIntake() {
             </SelectTrigger>
             <SelectContent>
               {COMMON_ISSUES.map((i) => (
-                <SelectItem key={i.label} value={i.label}>{i.label}</SelectItem>
+                <SelectItem key={i.label} value={i.label}>
+                  {i.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -336,18 +354,37 @@ export default function CustomerFormIntake() {
           )}
           {geo.status === "success" && location && (
             <p className="text-xs text-muted-foreground truncate px-1">
-              <MapPin className="w-3 h-3 inline mr-1" />{location}
+              <MapPin className="w-3 h-3 inline mr-1" />
+              {location}
             </p>
           )}
         </div>
 
         {/* Vehicle */}
         <div className="space-y-2">
-          <Label className="text-sidebar-foreground">Vehicle <span className="text-muted-foreground text-xs font-normal">(year optional)</span></Label>
+          <Label className="text-sidebar-foreground">
+            Vehicle <span className="text-muted-foreground text-xs font-normal">(year optional)</span>
+          </Label>
           <div className="grid grid-cols-3 gap-2">
-            <Input placeholder="Make" value={vehicleMake} onChange={(e) => setVehicleMake(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
-            <Input placeholder="Model" value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
-            <Input placeholder="Year" value={vehicleYear} onChange={(e) => setVehicleYear(e.target.value)} type="number" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
+            <Input
+              placeholder="Make"
+              value={vehicleMake}
+              onChange={(e) => setVehicleMake(e.target.value)}
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
+            <Input
+              placeholder="Model"
+              value={vehicleModel}
+              onChange={(e) => setVehicleModel(e.target.value)}
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
+            <Input
+              placeholder="Year"
+              value={vehicleYear}
+              onChange={(e) => setVehicleYear(e.target.value)}
+              type="number"
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
           </div>
         </div>
 
@@ -358,7 +395,10 @@ export default function CustomerFormIntake() {
             <Button
               type="button"
               variant={drivable === true ? "default" : "outline"}
-              onClick={() => { setDrivable(true); setTowRequired(false); }}
+              onClick={() => {
+                setDrivable(true);
+                setTowRequired(false);
+              }}
               className="flex-1 h-12 rounded-xl border-sidebar-border"
             >
               Yes
@@ -366,7 +406,10 @@ export default function CustomerFormIntake() {
             <Button
               type="button"
               variant={drivable === false ? "default" : "outline"}
-              onClick={() => { setDrivable(false); setTowRequired(true); }}
+              onClick={() => {
+                setDrivable(false);
+                setTowRequired(true);
+              }}
               className="flex-1 h-12 rounded-xl border-sidebar-border"
             >
               No
@@ -391,8 +434,19 @@ export default function CustomerFormIntake() {
         <div className="space-y-2">
           <Label className="text-sidebar-foreground">Your info</Label>
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Name (optional)" value={callerName} onChange={(e) => setCallerName(e.target.value)} className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
-            <Input placeholder="+1 416 555 1234" value={callerPhone} onChange={(e) => setCallerPhone(e.target.value)} type="tel" className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl" />
+            <Input
+              placeholder="Name (optional)"
+              value={callerName}
+              onChange={(e) => setCallerName(e.target.value)}
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
+            <Input
+              placeholder="+1 416 555 1234"
+              value={callerPhone}
+              onChange={(e) => setCallerPhone(e.target.value)}
+              type="tel"
+              className="bg-sidebar-accent border-sidebar-border text-sidebar-foreground h-12 rounded-xl"
+            />
           </div>
         </div>
 
