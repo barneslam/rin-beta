@@ -141,9 +141,9 @@ serve(async (req) => {
         required_truck_type_id: requiredTruckTypeId || null,
         required_equipment: requiredEquipment || [],
         location_type: locationType || "roadside",
-        job_status: "intake_completed",
+        job_status: "pending_customer_confirmation",
       })
-      .select("job_id")
+      .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location")
       .single();
 
     if (jobErr || !job) {
@@ -155,18 +155,79 @@ serve(async (req) => {
 
     console.log(`[INTAKE-JOB] Step 2 — job=created phone="${phone}" user_id="${userId}" job_id="${jobId}" status=ok`);
 
+    // CHECKPOINT_JOB_CREATED
+    console.log(`[CHECKPOINT_JOB_CREATED] job_id=${jobId} vehicle_make=${job.vehicle_make ?? "null"} vehicle_model=${job.vehicle_model ?? "null"} vehicle_year=${job.vehicle_year ?? "null"} pickup_location=${job.pickup_location ?? "null"} incident_type_id=${incidentTypeId ?? "null"}`);
+
     // Audit trail in job_events
     await supabase.from("job_events").insert({
       job_id: jobId,
       event_type: "intake_created",
       event_category: "lifecycle",
       message: `Job created via dispatcher intake — phone=${phone} user_id=${userId}`,
-      new_value: { phone, user_id: userId, job_id: jobId, job_status: "intake_completed" },
+      new_value: { phone, user_id: userId, job_id: jobId, job_status: "pending_customer_confirmation" },
     });
 
-    console.log(`[INTAKE-JOB] Complete — phone="${phone}" user_id="${userId}" job_id="${jobId}" status=ok`);
+    // -------------------------------------------------------------------------
+    // Step 3: Send customer summary SMS (non-fatal — job is already created)
+    // -------------------------------------------------------------------------
+    let smsSid: string | undefined;
+    let smsStatus = "skipped";
 
-    return jsonResp({ success: true, user_id: userId, job_id: jobId, phone });
+    try {
+      const smsPayload = { jobId, phone };
+
+      // Checkpoint: about to call send-customer-confirmation
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "confirmation_sms_triggered",
+        event_category: "communication",
+        message: "Calling send-customer-confirmation",
+      });
+      console.log(`[CHECKPOINT_SMS_TRIGGERED] calling send-customer-confirmation payload=${JSON.stringify(smsPayload)}`);
+
+      const smsResp = await fetch(`${SUPABASE_URL}/functions/v1/send-customer-confirmation`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(smsPayload),
+      });
+
+      const smsBody = await smsResp.json().catch(() => ({}));
+      if (smsResp.ok && smsBody.success) {
+        smsSid = smsBody.sid;
+        smsStatus = "sent";
+        await supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "confirmation_sms_trigger_success",
+          event_category: "communication",
+          message: `send-customer-confirmation returned ${smsResp.status} — sid=${smsBody.sid ?? "unknown"}`,
+        });
+      } else {
+        smsStatus = "failed";
+        await supabase.from("job_events").insert({
+          job_id: jobId,
+          event_type: "confirmation_sms_trigger_failed",
+          event_category: "communication",
+          message: `send-customer-confirmation returned ${smsResp.status} — error=${smsBody.error ?? "unknown"}`,
+        });
+        console.error(`[INTAKE-JOB] Step 3 — SMS failed job_id="${jobId}" status=${smsResp.status} error="${smsBody.error ?? "unknown"}"`);
+      }
+    } catch (smsErr) {
+      smsStatus = "error";
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "confirmation_sms_trigger_failed",
+        event_category: "communication",
+        message: `send-customer-confirmation threw: ${smsErr}`,
+      });
+      console.error(`[INTAKE-JOB] Step 3 — SMS threw job_id="${jobId}" error="${smsErr}"`);
+    }
+
+    console.log(`[INTAKE-JOB] Complete — phone="${phone}" user_id="${userId}" job_id="${jobId}" sms=${smsStatus}${smsSid ? ` sid=${smsSid}` : ""} status=ok`);
+
+    return jsonResp({ success: true, user_id: userId, job_id: jobId, phone, sms_status: smsStatus });
   } catch (error: unknown) {
     console.error("[INTAKE-JOB] Unhandled error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";

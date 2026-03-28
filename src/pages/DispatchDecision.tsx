@@ -1,8 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import { useActiveJob } from "@/context/JobContext";
-import { useUpdateJob } from "@/hooks/useJobs";
 import { useDispatchRecommendation } from "@/hooks/useDispatchEngine";
 import { toast } from "sonner";
 
@@ -18,7 +18,7 @@ const DispatchDecision = () => {
     equipment,
     isLoading,
   } = useDispatchRecommendation(activeJobId);
-  const updateJob = useUpdateJob();
+  const navigate = useNavigate();
 
   if (!job) {
     return (
@@ -40,17 +40,10 @@ const DispatchDecision = () => {
 
   const complexityLabels: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High", 4: "Critical" };
 
-  const handleRunRecommendation = async () => {
-    try {
-      await updateJob.mutateAsync({
-        jobId: job.job_id,
-        updates: { job_status: "dispatch_recommendation_ready" as any },
-        eventSource: "dispatch_screen",
-      });
-      toast.success("Dispatch recommendation ready");
-    } catch {
-      toast.error("Failed to run recommendation");
-    }
+  const handleRunRecommendation = () => {
+    // dispatch_recommendation_ready has no gating function downstream — navigate directly
+    toast.success("Dispatch recommendation ready");
+    navigate("/matching");
   };
 
   return (
@@ -140,11 +133,7 @@ const DispatchDecision = () => {
           <CardContent className="py-6 flex flex-col items-center justify-center gap-3">
             <Button
               onClick={handleRunRecommendation}
-              disabled={
-                !validationResult?.valid ||
-                updateJob.isPending ||
-                isLoading
-              }
+              disabled={!validationResult?.valid || isLoading}
               className="w-full"
             >
               Run Dispatch Recommendation

@@ -80,7 +80,7 @@ function useExcludedDriverIds(currentJobId: string | null) {
         .from("jobs")
         .select("assigned_driver_id")
         .not("assigned_driver_id", "is", null)
-        .in("job_status", ["driver_assigned", "driver_enroute", "driver_arrived", "vehicle_loaded", "service_in_progress"] as any);
+        .in("job_status", ["payment_authorization_required", "driver_enroute", "driver_arrived", "vehicle_loaded", "service_in_progress"] as any);
 
       (activeJobs ?? []).forEach((j) => {
         if (j.assigned_driver_id) exclude.add(j.assigned_driver_id);
@@ -190,6 +190,12 @@ export function useAutoDispatchOffer() {
         .single();
       if (jobErr || !job) throw new Error("Job not found");
 
+      // Guard: validate job is ready for dispatch before attempting any offers
+      const preValidation = validateJobForDispatch(job as any);
+      if (!preValidation.valid) {
+        throw new Error(`Job failed dispatch validation — missing: ${preValidation.missingFields.join(", ")}`);
+      }
+
       // 2. Get all existing offers for this job (attempted drivers)
       const { data: existingOffers } = await supabase
         .from("dispatch_offers")
@@ -246,15 +252,13 @@ export function useAutoDispatchOffer() {
       );
 
       if (available.length === 0) {
-        // If we're in wave 1 and no more drivers, check if wave 2 is possible
-        if (currentWave === 1 && attemptCount < WAVE_SIZE) {
-          // No eligible drivers at all — escalate
-          return await escalateJob(jobId, job);
+        // No attempts yet and no eligible drivers at all — this is a candidate shortage,
+        // not an exhaustion. Use no_driver_candidates, not reassignment_required.
+        if (attemptCount === 0 && eligible.length === 0) {
+          return await noDriverCandidatesJob(jobId, job);
         }
-        // Wave boundary or exhaustion
-        if (attemptCount >= WAVE_SIZE * MAX_WAVES || available.length === 0) {
-          return await escalateJob(jobId, job);
-        }
+        // All eligible drivers have been attempted or are in cooldown — true exhaustion.
+        return await escalateJob(jobId, job);
       }
 
       // 6. Pick top driver
@@ -324,6 +328,26 @@ export function useAutoDispatchOffer() {
       queryClient.invalidateQueries({ queryKey: ["audit_logs"] });
     },
   });
+}
+
+async function noDriverCandidatesJob(jobId: string, job: any) {
+  await supabase
+    .from("jobs")
+    .update({ job_status: "no_driver_candidates" as any })
+    .eq("job_id", jobId);
+
+  await createAuditAndEvent(jobId, {
+    auditActionType: "No eligible drivers found for this job — no offers sent",
+    auditEventType: "reassignment_requested",
+    auditEventSource: "dispatch_engine",
+    eventType: "no_driver_candidates",
+    eventCategory: "exception",
+    message: "No eligible drivers exist for this job. Review truck type, equipment, or driver availability.",
+    oldValue: { job_status: job.job_status },
+    newValue: { job_status: "no_driver_candidates" },
+  });
+
+  return { escalated: true, offer: null, wave: 1, waveAttempt: 0, totalAttempts: 0, driverName: null, noDriverCandidates: true };
 }
 
 async function escalateJob(jobId: string, job: any) {
@@ -411,27 +435,12 @@ export function useDeclineDispatchOffer() {
       driverName?: string;
       autoAdvanceFn?: () => Promise<any>;
     }) => {
-      // Decline this offer
-      const { error } = await supabase
-        .from("dispatch_offers")
-        .update({ offer_status: "declined" as any })
-        .eq("offer_id", offerId);
-      if (error) throw error;
-
-      // Clear reservation
-      await supabase
-        .from("jobs")
-        .update({ reserved_driver_id: null, reservation_expires_at: null } as any)
-        .eq("job_id", jobId);
-
-      await createAuditAndEvent(jobId, {
-        auditActionType: `Offer declined by driver ${driverName || driverId.slice(0, 8)}`,
-        auditEventType: "offer_responded",
-        auditEventSource: "offer_screen",
-        eventType: "offer_declined",
-        eventCategory: "dispatch",
-        message: `Driver ${driverName || "unknown"} declined job offer`,
+      // Server-side: offer status update, reservation clear, and audit event
+      const { data, error } = await supabase.functions.invoke("resolve-dispatch-offer", {
+        body: { offerId, jobId, driverId, resolution: "declined", driverName },
       });
+      if (error) throw new Error(error.message || "resolve-dispatch-offer failed");
+      if (!data?.success) throw new Error(data?.error || "resolve-dispatch-offer failed");
 
       // Auto-advance to next driver
       if (autoAdvanceFn) {
@@ -470,50 +479,12 @@ export function useExpireDispatchOffer() {
       driverName?: string;
       autoAdvanceFn?: () => Promise<any>;
     }) => {
-      // Expire offer + mark as no_response at offer level
-      const { error } = await supabase
-        .from("dispatch_offers")
-        .update({
-          offer_status: "expired" as any,
-          sms_delivery_status: "no_response",
-        } as any)
-        .eq("offer_id", offerId);
-      if (error) throw error;
-
-      // Soft increment driver no_response_count (not marking unreachable on single miss)
-      const { data: driverData } = await supabase
-        .from("drivers")
-        .select("no_response_count")
-        .eq("driver_id", driverId)
-        .single();
-
-      const currentCount = (driverData?.no_response_count as number) ?? 0;
-      const newCount = currentCount + 1;
-      const NO_RESPONSE_THRESHOLD = 3;
-
-      await supabase
-        .from("drivers")
-        .update({
-          no_response_count: newCount,
-          // Only mark sms_delivery_status as unreachable after repeated evidence
-          ...(newCount >= NO_RESPONSE_THRESHOLD ? { sms_delivery_status: "unreachable" } : {}),
-        } as any)
-        .eq("driver_id", driverId);
-
-      // Clear reservation
-      await supabase
-        .from("jobs")
-        .update({ reserved_driver_id: null, reservation_expires_at: null } as any)
-        .eq("job_id", jobId);
-
-      await createAuditAndEvent(jobId, {
-        auditActionType: `Offer expired for driver ${driverName || driverId.slice(0, 8)} (no_response_count: ${newCount})`,
-        auditEventType: "offer_responded",
-        auditEventSource: "offer_screen",
-        eventType: "offer_expired",
-        eventCategory: "dispatch",
-        message: `Driver ${driverName || "unknown"} offer expired (no response #${newCount})`,
+      // Server-side: offer expiry, no_response_count increment, reservation clear, and audit event
+      const { data, error } = await supabase.functions.invoke("resolve-dispatch-offer", {
+        body: { offerId, jobId, driverId, resolution: "expired", driverName },
       });
+      if (error) throw new Error(error.message || "resolve-dispatch-offer failed");
+      if (!data?.success) throw new Error(data?.error || "resolve-dispatch-offer failed");
 
       // Auto-advance to next driver
       if (autoAdvanceFn) {

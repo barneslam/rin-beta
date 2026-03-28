@@ -49,7 +49,7 @@ serve(async (req) => {
     // ------------------------------------------------------------------
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, job_status, assigned_driver_id, user_id")
+      .select("job_id, job_status, assigned_driver_id, user_id, incident_type_id, can_vehicle_roll, gps_lat, gps_long, pickup_location")
       .eq("job_id", jobId)
       .single();
 
@@ -59,6 +59,31 @@ serve(async (req) => {
     }
 
     console.log(`[CREATE-OFFER] Job found — job_status=${job.job_status}`);
+
+    // Guard: waiting for customer confirmation
+    if (job.job_status === "pending_customer_confirmation") {
+      console.warn(`[CREATE-OFFER] Job awaiting customer confirmation — job_id=${jobId} status=${job.job_status}`);
+      return jsonResp({
+        success: false,
+        error: "Job is awaiting customer confirmation — dispatch is blocked until the customer confirms",
+        code: "pending_customer_confirmation",
+      }, 409);
+    }
+
+    // Guard: validation — required dispatch fields must be present
+    const missingFields: string[] = [];
+    if (!job.incident_type_id) missingFields.push("incident_type_id");
+    if (job.can_vehicle_roll == null) missingFields.push("can_vehicle_roll");
+    if (!job.gps_lat && !job.gps_long && !job.pickup_location) missingFields.push("location");
+    if (missingFields.length > 0) {
+      console.warn(`[CREATE-OFFER] Validation failed — job_id=${jobId} missing=${missingFields.join(",")}`);
+      return jsonResp({
+        success: false,
+        error: `Job is not ready for dispatch — missing required fields: ${missingFields.join(", ")}`,
+        code: "validation_failed",
+        missingFields,
+      }, 422);
+    }
 
     // Guard: already assigned
     if (job.assigned_driver_id) {

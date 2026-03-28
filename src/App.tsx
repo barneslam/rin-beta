@@ -13,6 +13,7 @@ import CustomerFormIntake from "./pages/CustomerFormIntake";
 import CustomerVoiceIntake from "./pages/CustomerVoiceIntake";
 import CustomerTracking from "./pages/CustomerTracking";
 import CustomerPayment from "./pages/CustomerPayment";
+import CustomerJobConfirm from "./pages/CustomerJobConfirm";
 
 // Dispatcher pages
 import IncidentIntake from "./pages/IncidentIntake";
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/get-help/voice" element={<CustomerVoiceIntake />} />
           <Route path="/track/:jobId" element={<CustomerTracking />} />
           <Route path="/pay/:jobId" element={<CustomerPayment />} />
+          <Route path="/confirm/:jobId" element={<CustomerJobConfirm />} />
           <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
 
           {/* Dispatcher routes — with sidebar */}

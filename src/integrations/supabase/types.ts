@@ -807,7 +807,7 @@ export type Database = {
       job_status:
         | "intake_started"
         | "intake_completed"
-        | "validation_required"
+        | "pending_customer_confirmation"
         | "ready_for_dispatch"
         | "driver_offer_sent"
         | "driver_assigned"
@@ -819,6 +819,7 @@ export type Database = {
         | "driver_arrived"
         | "vehicle_loaded"
         | "customer_reapproval_pending"
+        | "no_driver_candidates"
         | "reassignment_required"
         | "driver_unavailable"
         | "cancelled_by_customer"
@@ -974,7 +975,7 @@ export const Constants = {
       job_status: [
         "intake_started",
         "intake_completed",
-        "validation_required",
+        "pending_customer_confirmation",
         "ready_for_dispatch",
         "driver_offer_sent",
         "driver_assigned",
@@ -986,6 +987,7 @@ export const Constants = {
         "driver_arrived",
         "vehicle_loaded",
         "customer_reapproval_pending",
+        "no_driver_candidates",
         "reassignment_required",
         "driver_unavailable",
         "cancelled_by_customer",
