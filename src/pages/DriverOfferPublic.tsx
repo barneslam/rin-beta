@@ -34,8 +34,7 @@ const DriverOfferPublic = () => {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const functionUrl = `https://${projectId}.supabase.co/functions/v1/driver-respond`;
+  const functionUrl = "https://zyoszbmahxnfcokuzkuv.supabase.co/functions/v1/driver-respond";
 
   // Fetch offer details
   useEffect(() => {
