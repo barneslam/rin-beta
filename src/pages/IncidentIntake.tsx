@@ -37,6 +37,8 @@ const IncidentIntake = () => {
     vehicle_make: "",
     vehicle_model: "",
     vehicle_year: "",
+    vehicle_condition: "",
+    can_vehicle_roll: "" as "" | "yes" | "no",
     location_type: "roadside",
   });
 
@@ -103,6 +105,8 @@ const IncidentIntake = () => {
           vehicleMake: form.vehicle_make || undefined,
           vehicleModel: form.vehicle_model || undefined,
           vehicleYear: form.vehicle_year ? Number(form.vehicle_year) : undefined,
+          vehicleCondition: form.vehicle_condition || undefined,
+          canVehicleRoll: form.can_vehicle_roll === "yes" ? true : form.can_vehicle_roll === "no" ? false : undefined,
           incidentTypeId: form.incident_type_id || undefined,
           pickupLocation: form.pickup_location || undefined,
           gpsLat: form.gps_lat ? Number(form.gps_lat) : undefined,
@@ -209,6 +213,22 @@ const IncidentIntake = () => {
               <div>
                 <Label className="text-xs">Year</Label>
                 <Input value={form.vehicle_year} onChange={(e) => setForm((f) => ({ ...f, vehicle_year: e.target.value }))} placeholder="2021" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Is vehicle drivable?</Label>
+                <Select value={form.can_vehicle_roll} onValueChange={(v) => setForm((f) => ({ ...f, can_vehicle_roll: v as "" | "yes" | "no" }))}>
+                  <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Yes</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Vehicle condition <span className="text-muted-foreground">(optional)</span></Label>
+                <Input value={form.vehicle_condition} onChange={(e) => setForm((f) => ({ ...f, vehicle_condition: e.target.value }))} placeholder="e.g. flat tire, engine off" />
               </div>
             </div>
           </CardContent>

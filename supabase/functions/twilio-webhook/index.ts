@@ -7,6 +7,7 @@ const DRIVER_DECLINE_KEYWORDS = new Set(["NO", "N", "DECLINE"]);
 const DRIVER_DONE_KEYWORDS = new Set(["DONE", "COMPLETE", "FINISH"]);
 const DRIVER_CANCEL_AT_SCENE_KEYWORDS = new Set(["CANCEL"]);
 // ADJUST <amount> — driver updates price on scene, parsed separately
+const DRIVER_ARRIVED_KEYWORDS = new Set(["ARRIVED", "ARRIVE", "HERE", "ON SCENE", "ONSCENE"]);
 const CUSTOMER_CONFIRM_KEYWORDS = new Set(["YES", "Y", "CONFIRM", "OK"]);
 const CUSTOMER_APPROVE_KEYWORDS = new Set(["APPROVE"]);
 
@@ -175,6 +176,75 @@ async function handleDriverReply(
       console.error(`[WEBHOOK] complete-job threw — job=${activeJob.job_id} error=${err}`);
       return twimlResponse("Something went wrong. Please contact dispatch.");
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // ARRIVED — driver signals they are on scene
+  // -----------------------------------------------------------------------
+  if (DRIVER_ARRIVED_KEYWORDS.has(body)) {
+    const { data: activeJob } = await supabase
+      .from("jobs")
+      .select("job_id, job_status, user_id")
+      .eq("assigned_driver_id", driver.driver_id)
+      .in("job_status", ["driver_enroute", "driver_assigned"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!activeJob) {
+      return twimlResponse("No active en-route job found. Contact dispatch if you need assistance.");
+    }
+
+    await supabase.from("jobs").update({
+      job_status: "driver_arrived",
+    }).eq("job_id", activeJob.job_id);
+
+    await supabase.from("job_events").insert({
+      job_id: activeJob.job_id,
+      event_type: "driver_arrived",
+      event_category: "lifecycle",
+      actor_type: "driver",
+      message: `Driver ${driver.driver_name} reported arrival on scene via SMS (SID: ${messageSid})`,
+      new_value: { job_status: "driver_arrived" },
+    });
+
+    console.log(`[WEBHOOK] Driver ${driver.driver_name} arrived — job=${activeJob.job_id}`);
+
+    // Notify customer
+    if (activeJob.user_id) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("user_id", activeJob.user_id)
+        .single();
+
+      if (user?.phone) {
+        const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
+        const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
+        const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+        if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
+          const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+          await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Basic ${auth}`,
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: new URLSearchParams({
+                To: user.phone,
+                From: TWILIO_PHONE_NUMBER,
+                Body: `RIN: Your driver ${driver.driver_name} has arrived at your location and will begin service shortly.`,
+              }),
+            }
+          ).catch((e) => console.error(`[WEBHOOK] Arrival customer SMS failed: ${e}`));
+        }
+      }
+    }
+
+    return twimlResponse("Arrival recorded. The customer has been notified. Reply DONE when the job is complete.");
   }
 
   // -----------------------------------------------------------------------
@@ -400,7 +470,7 @@ async function handleDriverReply(
   // Unrecognized reply
   const link = `https://rin-beta.lovable.app/driver/offer/${offer.offer_id}?token=${offer.token}`;
   console.log(`[WEBHOOK] Unrecognized driver reply: "${body}"`);
-  return twimlResponse(`Reply YES to accept or NO to decline. Or use: ${link}`);
+  return twimlResponse(`Reply YES to accept or NO to decline. Once en route, reply ARRIVED when on scene, DONE when complete. Or use: ${link}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,13 +488,68 @@ async function handleCustomerReply(
     last_sms_response_at: new Date().toISOString(),
   }).eq("user_id", customer.user_id);
 
+  // -----------------------------------------------------------------------
+  // HIGHEST PRIORITY: job awaiting completion confirmation (driver sent DONE)
+  // -----------------------------------------------------------------------
+  const { data: completionJobs } = await supabase
+    .from("jobs")
+    .select("job_id, job_status, estimated_price")
+    .eq("user_id", customer.user_id)
+    .eq("job_status", "pending_completion_approval")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const completionJob = completionJobs?.[0];
+
+  if (completionJob) {
+    const priceStr = completionJob.estimated_price
+      ? `$${Number(completionJob.estimated_price).toFixed(2)}`
+      : "the service amount";
+
+    if (CUSTOMER_CONFIRM_KEYWORDS.has(body) || body === "CONFIRM") {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/complete-job`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ jobId: completionJob.job_id, confirmed: true }),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          return twimlResponse(`Thank you for confirming! Payment of ${priceStr} is being processed. We hope to see you again!`);
+        }
+        console.error(`[WEBHOOK] complete-job phase 2 failed — job=${completionJob.job_id} error=${data.error}`);
+        return twimlResponse("Could not process your confirmation. Please contact dispatch.");
+      } catch (err) {
+        console.error(`[WEBHOOK] complete-job phase 2 threw — job=${completionJob.job_id} error=${err}`);
+        return twimlResponse("Something went wrong. Please contact dispatch.");
+      }
+    }
+
+    if (body === "DISPUTE") {
+      await supabase.from("job_events").insert({
+        job_id: completionJob.job_id,
+        event_type: "customer_dispute",
+        event_category: "payment",
+        actor_type: "customer",
+        message: `Customer ${customer.name} disputed the charge of ${priceStr} via SMS (SID: ${messageSid})`,
+      });
+      return twimlResponse("Your dispute has been noted. A dispatcher will contact you shortly to resolve this.");
+    }
+
+    return twimlResponse(`Your driver has completed the service. Amount to be charged: ${priceStr}. Reply CONFIRM to authorize the payment, or DISPUTE if you have a concern.`);
+  }
+
   // Find job awaiting customer confirmation (details)
   const { data: confirmJobs } = await supabase
     .from("jobs")
     .select("job_id, job_status, sms_confirmed")
     .eq("user_id", customer.user_id)
-    .eq("sms_confirmed", false)
-    .in("job_status", ["pending_customer_confirmation"])
+    .eq("job_status", "pending_customer_confirmation")
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -445,8 +570,27 @@ async function handleCustomerReply(
 
   // -----------------------------------------------------------------------
   // YES / CONFIRM — customer confirms job details
+  // If no confirmation job but a price job exists, treat as APPROVE
   // -----------------------------------------------------------------------
   if (CUSTOMER_CONFIRM_KEYWORDS.has(body)) {
+    if (!confirmJob && priceJob) {
+      // Customer replied YES to the price SMS — route to APPROVE logic
+      const payLink = `https://rin-beta.lovable.app/pay/${priceJob.job_id}`;
+      const priceStr = priceJob.estimated_price ? `$${Number(priceJob.estimated_price).toFixed(2)}` : "the estimated amount";
+      await supabase.from("jobs").update({
+        job_status: "payment_authorization_required",
+        sms_confirmed_at: new Date().toISOString(),
+      }).eq("job_id", priceJob.job_id);
+      await supabase.from("job_events").insert({
+        job_id: priceJob.job_id,
+        event_type: "customer_approve_sms",
+        event_category: "pricing",
+        message: `Customer ${customer.name} replied YES (treated as APPROVE) via SMS — payment link sent (SID: ${messageSid})`,
+        new_value: { job_status: "payment_authorization_required" },
+      });
+      console.log(`[WEBHOOK] Customer replied YES to price job ${priceJob.job_id} — routing as APPROVE, status → payment_authorization_required`);
+      return twimlResponse(`To complete your authorization of ${priceStr}, please visit: ${payLink}`);
+    }
     if (!confirmJob) {
       return twimlResponse("You have no pending requests to confirm.");
     }
@@ -481,14 +625,20 @@ async function handleCustomerReply(
     const payLink = `https://rin-beta.lovable.app/pay/${priceJob.job_id}`;
     const priceStr = priceJob.estimated_price ? `$${Number(priceJob.estimated_price).toFixed(2)}` : "the estimated amount";
 
+    await supabase.from("jobs").update({
+      job_status: "payment_authorization_required",
+      sms_confirmed_at: new Date().toISOString(),
+    }).eq("job_id", priceJob.job_id);
+
     await supabase.from("job_events").insert({
       job_id: priceJob.job_id,
       event_type: "customer_approve_sms",
       event_category: "pricing",
       message: `Customer ${customer.name} replied APPROVE via SMS — payment link sent (SID: ${messageSid})`,
+      new_value: { job_status: "payment_authorization_required" },
     });
 
-    console.log(`[WEBHOOK] Customer approved price for job ${priceJob.job_id} — sending payment link`);
+    console.log(`[WEBHOOK] Customer approved price for job ${priceJob.job_id} — status → payment_authorization_required, sending payment link`);
     return twimlResponse(`To complete your authorization of ${priceStr}, please visit: ${payLink}`);
   }
 

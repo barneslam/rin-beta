@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "sonner";
 import { CheckCircle2, XCircle, Loader2, MapPin } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const LOCATION_TYPES = [
   { value: "roadside", label: "Roadside" },
@@ -29,6 +30,7 @@ type JobData = {
   gps_long: number | null;
   location_type: string | null;
   incident_type_id: string | null;
+  can_vehicle_roll: boolean | null;
   sms_confirmed: boolean;
 };
 
@@ -55,6 +57,7 @@ const CustomerJobConfirm = () => {
     gps_long: "",
     location_type: "roadside",
     incident_type_id: "",
+    can_vehicle_roll: "" as "" | "yes" | "no",
   });
 
   useEffect(() => {
@@ -65,7 +68,7 @@ const CustomerJobConfirm = () => {
       const [{ data: jobData, error }, { data: types }] = await Promise.all([
         supabase
           .from("jobs")
-          .select("job_id, job_status, vehicle_make, vehicle_model, vehicle_year, pickup_location, gps_lat, gps_long, location_type, incident_type_id, sms_confirmed")
+          .select("job_id, job_status, vehicle_make, vehicle_model, vehicle_year, pickup_location, gps_lat, gps_long, location_type, incident_type_id, can_vehicle_roll, sms_confirmed")
           .eq("job_id", jobId)
           .single(),
         supabase.from("incident_types").select("incident_type_id, incident_name").order("incident_name"),
@@ -99,6 +102,7 @@ const CustomerJobConfirm = () => {
         gps_long: jobData.gps_long != null ? String(jobData.gps_long) : "",
         location_type: jobData.location_type ?? "roadside",
         incident_type_id: jobData.incident_type_id ?? "",
+        can_vehicle_roll: jobData.can_vehicle_roll === true ? "yes" : jobData.can_vehicle_roll === false ? "no" : "",
       });
 
       setLoading(false);
@@ -124,6 +128,7 @@ const CustomerJobConfirm = () => {
         gps_long: form.gps_long ? Number(form.gps_long) : null,
         location_type: form.location_type || "roadside",
         incident_type_id: form.incident_type_id || null,
+        can_vehicle_roll: form.can_vehicle_roll === "yes" ? true : form.can_vehicle_roll === "no" ? false : null,
       };
 
       const { error } = await supabase.from("jobs").update(updates).eq("job_id", jobId);
@@ -253,7 +258,7 @@ const CustomerJobConfirm = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Vehicle</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <Label className="text-xs">Make</Label>
@@ -267,6 +272,24 @@ const CustomerJobConfirm = () => {
                 <Label className="text-xs">Year</Label>
                 <Input value={form.vehicle_year} onChange={(e) => setForm((f) => ({ ...f, vehicle_year: e.target.value }))} placeholder="2021" />
               </div>
+            </div>
+            <div className="border-t pt-3">
+              <Label className="text-sm font-medium">Can your vehicle roll?</Label>
+              <p className="text-xs text-muted-foreground mb-2">Can it be pushed or moved with the wheels on the ground?</p>
+              <RadioGroup
+                value={form.can_vehicle_roll}
+                onValueChange={(v) => setForm((f) => ({ ...f, can_vehicle_roll: v as "" | "yes" | "no" }))}
+                className="flex gap-6"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="yes" id="roll-yes" />
+                  <Label htmlFor="roll-yes" className="font-normal cursor-pointer">Yes</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="no" id="roll-no" />
+                  <Label htmlFor="roll-no" className="font-normal cursor-pointer">No</Label>
+                </div>
+              </RadioGroup>
             </div>
           </CardContent>
         </Card>

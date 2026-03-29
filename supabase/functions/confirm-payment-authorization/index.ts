@@ -99,11 +99,11 @@ serve(async (req) => {
         new_value: { job_status: "payment_authorized" },
       });
 
-      // 2. Auto-advance to driver_enroute (operational status)
+      // 2. Auto-advance to ready_for_dispatch (dispatch can now proceed)
       await supabase
         .from("jobs")
         .update({
-          job_status: "driver_enroute",
+          job_status: "ready_for_dispatch",
           authorization_status: "authorized",
         })
         .eq("job_id", jobId);
@@ -111,19 +111,19 @@ serve(async (req) => {
       // 3. Log the auto-advancement
       await supabase.from("audit_logs").insert({
         job_id: jobId,
-        action_type: `Status: payment_authorized → driver_enroute (auto-advanced)`,
+        action_type: `Status: payment_authorized → ready_for_dispatch (auto-advanced)`,
         event_type: "status_changed",
         event_source: "stripe",
         old_value: { job_status: "payment_authorized" },
-        new_value: { job_status: "driver_enroute" },
+        new_value: { job_status: "ready_for_dispatch" },
       });
 
       await supabase.from("job_events").insert({
         job_id: jobId,
         event_type: "status_changed",
         event_category: "lifecycle",
-        message: "Payment authorized — driver en route",
-        new_value: { job_status: "driver_enroute" },
+        message: "Payment authorized — ready for dispatch",
+        new_value: { job_status: "ready_for_dispatch" },
       });
 
       // 4. Customer update event
@@ -131,10 +131,10 @@ serve(async (req) => {
         job_id: jobId,
         event_type: "customer_update",
         event_category: "customer_update",
-        message: "Payment authorized! Your driver is now on the way.",
+        message: "Payment authorized! A driver is being assigned and will be on the way shortly.",
       });
 
-      return new Response(JSON.stringify({ success: true, status: "authorized", advanced_to: "driver_enroute" }), {
+      return new Response(JSON.stringify({ success: true, status: "authorized", advanced_to: "ready_for_dispatch" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

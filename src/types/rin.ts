@@ -50,11 +50,13 @@ export const JOB_STATUS_LABELS: Record<string, string> = {
   driver_arrived: "Driver Arrived",
   service_in_progress: "Service In Progress",
   vehicle_loaded: "Vehicle Loaded",
+  pending_completion_approval: "Awaiting Customer Confirmation",
   job_completed: "Job Completed",
   job_amended: "Job Amended",
   customer_reapproval_pending: "Customer Re-Approval Pending",
   reassignment_required: "Reassignment Required",
   driver_unavailable: "Driver Unavailable",
+  driver_cancelled_at_scene: "Driver Cancelled at Scene",
   cancelled_by_customer: "Cancelled by Customer",
   cancelled_after_dispatch: "Cancelled After Dispatch",
 };
@@ -75,13 +77,15 @@ export const JOB_STATUS_COLORS: Record<string, string> = {
   driver_arrived: "bg-success/30 text-success",
   service_in_progress: "bg-success/35 text-success",
   vehicle_loaded: "bg-success/35 text-success",
+  pending_completion_approval: "bg-accent/45 text-accent-foreground",
   job_completed: "bg-success/20 text-success",
   job_amended: "bg-destructive/10 text-destructive",
   customer_reapproval_pending: "bg-accent/40 text-accent-foreground",
   reassignment_required: "bg-destructive/15 text-destructive",
   driver_unavailable: "bg-destructive/20 text-destructive",
-  cancelled_by_customer: "bg-destructive/25 text-destructive",
-  cancelled_after_dispatch: "bg-destructive/30 text-destructive",
+  driver_cancelled_at_scene: "bg-destructive/25 text-destructive",
+  cancelled_by_customer: "bg-destructive/30 text-destructive",
+  cancelled_after_dispatch: "bg-destructive/35 text-destructive",
 };
 
 export interface JobEvent {

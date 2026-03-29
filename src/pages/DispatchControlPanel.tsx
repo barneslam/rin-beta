@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,8 +47,10 @@ const DispatchControlPanel = () => {
   const { data: feedEvents } = useJobEventsForFeed();
   const { setActiveJobId } = useActiveJob();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState("all");
   const [checkingTimeouts, setCheckingTimeouts] = useState(false);
+  const [bypassingJobId, setBypassingJobId] = useState<string | null>(null);
 
   const handleCheckTimeouts = async () => {
     setCheckingTimeouts(true);
@@ -66,6 +69,36 @@ const DispatchControlPanel = () => {
     }
   };
 
+  const handleBypassPayment = async (jobId: string) => {
+    setBypassingJobId(jobId);
+    try {
+      // Mirror what confirm-payment-authorization does: log payment_authorized event,
+      // then immediately advance to ready_for_dispatch so DriverMatching can proceed.
+      await supabase.from("jobs").update({
+        job_status: "ready_for_dispatch",
+        authorization_status: "authorized",
+        stripe_payment_intent_id: `bypass_test_${Date.now()}`,
+      } as any).eq("job_id", jobId);
+      await supabase.from("job_events" as any).insert([
+        {
+          job_id: jobId,
+          event_type: "payment_bypassed",
+          event_category: "payment",
+          message: "Pricing & payment authorization bypassed by dispatcher (TEST — Stripe not yet integrated)",
+          new_value: { job_status: "ready_for_dispatch", authorization_status: "authorized" },
+        },
+      ] as any);
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      setActiveJobId(jobId);
+      toast({ title: "Payment Bypassed", description: "Job is now ready for driver dispatch." });
+      navigate("/matching");
+    } catch (err) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setBypassingJobId(null);
+    }
+  };
+
   const driverMap = Object.fromEntries((drivers ?? []).map((d) => [d.driver_id, d]));
   const incidentMap = Object.fromEntries((incidentTypes ?? []).map((i) => [i.incident_type_id, i]));
 
@@ -75,6 +108,11 @@ const DispatchControlPanel = () => {
   });
 
   const exceptionJobs = (jobs ?? []).filter((j) => EXCEPTION_STATUSES.includes(j.job_status));
+  const paymentPendingJobs = (jobs ?? []).filter((j) =>
+    ["pending_customer_price_approval", "payment_authorization_required", "payment_failed"].includes(j.job_status)
+  );
+  const paymentPendingNoPriceJobs = paymentPendingJobs.filter((j) => !j.estimated_price || Number(j.estimated_price) <= 0);
+  const paymentPendingWithPriceJobs = paymentPendingJobs.filter((j) => j.estimated_price && Number(j.estimated_price) > 0);
 
   const getRouteForStatus = (status: string): string => {
     if (["intake_started", "intake_completed", "validation_required", "ready_for_dispatch", "dispatch_recommendation_ready"].includes(status)) return "/dispatch";
@@ -224,6 +262,79 @@ const DispatchControlPanel = () => {
               {checkingTimeouts ? "Checking…" : "Check Timeouts"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* DEV: Payment Authorization Bypass */}
+      <Card className="border-amber-500/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-amber-500" />
+            Pricing &amp; Payment Bypass
+            <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-600 ml-1">TEST ONLY</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">
+            Stripe is not yet integrated. Bypass pricing approval and/or payment authorization to continue testing the workflow.
+          </p>
+          {paymentPendingJobs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-2">No jobs awaiting payment authorization.</p>
+          ) : (
+            <div className="space-y-3">
+              {/* Jobs missing price — show warning, bypass blocked */}
+              {paymentPendingNoPriceJobs.map((job) => {
+                const incident = job.incident_type_id ? incidentMap[job.incident_type_id] : null;
+                return (
+                  <div key={job.job_id} className="flex items-center justify-between rounded border border-destructive/30 bg-destructive/5 p-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                      <span className="font-mono text-xs">{job.job_id.slice(0, 8)}</span>
+                      <Badge className={`${JOB_STATUS_COLORS[job.job_status as JobStatus] ?? "bg-muted text-muted-foreground"} text-[10px]`}>
+                        {JOB_STATUS_LABELS[job.job_status as JobStatus] ?? job.job_status}
+                      </Badge>
+                      <span className="text-sm">{incident?.incident_name ?? "—"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {[job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "—"}
+                      </span>
+                      <span className="text-xs text-destructive font-medium">No price set — set pricing first</span>
+                    </div>
+                    <Button size="sm" variant="outline" className="shrink-0 ml-3" onClick={() => openJob(job.job_id, job.job_status)}>
+                      Open
+                    </Button>
+                  </div>
+                );
+              })}
+              {/* Jobs with price — bypass allowed */}
+              {paymentPendingWithPriceJobs.map((job) => {
+                const incident = job.incident_type_id ? incidentMap[job.incident_type_id] : null;
+                return (
+                  <div key={job.job_id} className="flex items-center justify-between rounded border border-amber-500/20 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-mono text-xs">{job.job_id.slice(0, 8)}</span>
+                      <Badge className={`${JOB_STATUS_COLORS[job.job_status as JobStatus] ?? "bg-muted text-muted-foreground"} text-[10px]`}>
+                        {JOB_STATUS_LABELS[job.job_status as JobStatus] ?? job.job_status}
+                      </Badge>
+                      <span className="text-sm">{incident?.incident_name ?? "—"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {[job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "—"}
+                      </span>
+                      <Badge variant="outline">${Number(job.estimated_price).toFixed(2)}</Badge>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-500 text-amber-600 hover:bg-amber-50 shrink-0 ml-3"
+                      onClick={() => handleBypassPayment(job.job_id)}
+                      disabled={bypassingJobId === job.job_id}
+                    >
+                      {bypassingJobId === job.job_id ? "Bypassing…" : "Bypass"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 

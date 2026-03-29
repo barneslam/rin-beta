@@ -828,6 +828,10 @@ export type Database = {
         | "payment_failed"
         | "service_in_progress"
         | "payment_authorized"
+        | "pending_pricing"
+        | "pending_customer_price_approval"
+        | "pending_amount_adjustment"
+        | "driver_cancelled_at_scene"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -996,6 +1000,10 @@ export const Constants = {
         "payment_failed",
         "service_in_progress",
         "payment_authorized",
+        "pending_pricing",
+        "pending_customer_price_approval",
+        "pending_amount_adjustment",
+        "driver_cancelled_at_scene",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],

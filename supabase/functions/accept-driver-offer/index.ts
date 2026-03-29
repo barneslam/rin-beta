@@ -109,7 +109,7 @@ serve(async (req) => {
     // -----------------------------------------------------------------------
     const { data: currentJob } = await supabase
       .from("jobs")
-      .select("job_status, estimated_price, user_id, stripe_payment_intent_id")
+      .select("job_status, estimated_price, user_id, stripe_payment_intent_id, pickup_location, incident_type_id, vehicle_year, vehicle_make, vehicle_model")
       .eq("job_id", offer.job_id)
       .single();
 
@@ -335,6 +335,69 @@ serve(async (req) => {
     }
 
     console.log(`[ACCEPT] Customer SMS status — job=${offer.job_id} status=${customerSmsStatus} isNewFlow=${isNewFlow}`);
+
+    // -----------------------------------------------------------------------
+    // 7. Send driver confirmation SMS with full job details (new flow only)
+    // -----------------------------------------------------------------------
+    if (isNewFlow && hasSmsCreds) {
+      const { data: driverContact } = await supabase
+        .from("drivers")
+        .select("phone")
+        .eq("driver_id", offer.driver_id)
+        .single();
+
+      if (driverContact?.phone) {
+        const phoneCheck = validatePhone(driverContact.phone);
+        if (phoneCheck.valid) {
+          // Fetch incident type name
+          let incidentName = "Roadside Assistance";
+          if (currentJob?.incident_type_id) {
+            const { data: incidentType } = await supabase
+              .from("incident_types")
+              .select("incident_name")
+              .eq("incident_type_id", currentJob.incident_type_id)
+              .single();
+            if (incidentType?.incident_name) incidentName = incidentType.incident_name;
+          }
+
+          const vehicle = [currentJob?.vehicle_year, currentJob?.vehicle_make, currentJob?.vehicle_model]
+            .filter(Boolean).join(" ") || "Not specified";
+          const address = currentJob?.pickup_location || "Address not set — contact dispatch";
+          const price = currentJob?.estimated_price ? `$${Number(currentJob.estimated_price).toFixed(2)}` : "TBD";
+
+          const driverConfirmMsg =
+            `RIN: Job confirmed!\n\n` +
+            `Service: ${incidentName}\n` +
+            `Vehicle: ${vehicle}\n` +
+            `Pickup: ${address}\n` +
+            `Payout: ${price}\n\n` +
+            `Reply ARRIVED when on scene, DONE when complete.`;
+
+          try {
+            const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+            const smsResp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+              method: "POST",
+              headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER!, Body: driverConfirmMsg }),
+            });
+            if (smsResp.ok) {
+              const smsData = await smsResp.json();
+              console.log(`[ACCEPT] Driver confirmation SMS sent — to=${phoneCheck.e164} SID=${smsData.sid}`);
+              await supabase.from("job_events").insert({
+                job_id: offer.job_id,
+                event_type: "driver_confirmation_sms_sent",
+                event_category: "communication",
+                message: `Driver confirmation SMS sent to ${driverName} (${phoneCheck.e164}) — SID: ${smsData.sid}`,
+              });
+            } else {
+              console.error(`[ACCEPT] Driver confirmation SMS failed — status=${smsResp.status}`);
+            }
+          } catch (smsErr) {
+            console.error(`[ACCEPT] Driver confirmation SMS threw: ${smsErr}`);
+          }
+        }
+      }
+    }
 
     console.log(`[ACCEPT] Complete — offerId=${offerId} driver=${driverName} job=${offer.job_id} source=${source} newStatus=${newJobStatus} isNewFlow=${isNewFlow} customerSms=${customerSmsStatus}`);
 

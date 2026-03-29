@@ -46,7 +46,7 @@ serve(async (req) => {
     // STAGE 1: Fetch job row
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location, incident_type_id")
+      .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location, incident_type_id, can_vehicle_roll")
       .eq("job_id", jobId)
       .single();
 
@@ -91,13 +91,17 @@ serve(async (req) => {
 
     const pickupLocation = job.pickup_location || "Not provided";
 
+    const confirmLink = `https://rin-beta.lovable.app/confirm/${jobId}`;
+    const rollStatus = job.can_vehicle_roll === true ? "Yes" : job.can_vehicle_roll === false ? "No" : "Not answered";
+
     const smsBody =
       `RIN: We received your roadside request.\n\n` +
       `Vehicle: ${vehicleSummary}\n` +
       `Location: ${pickupLocation}\n` +
-      `Issue: ${incidentName}\n\n` +
-      `Confirm or edit:\nhttps://rin-beta.lovable.app/confirm/${jobId}\n\n` +
-      `Reply CANCEL to cancel`;
+      `Issue: ${incidentName}\n` +
+      `Can vehicle roll? ${rollStatus}\n\n` +
+      `Please confirm your details (or correct them) using this link:\n${confirmLink}\n\n` +
+      `Or reply YES to confirm as-is, or CANCEL to cancel.`;
 
     // CHECKPOINT 3: about to call Twilio
     await supabase.from("job_events").insert({

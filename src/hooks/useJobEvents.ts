@@ -5,6 +5,7 @@ export function useJobEvents(jobId?: string) {
   return useQuery({
     queryKey: ["job_events", jobId],
     enabled: !!jobId,
+    refetchInterval: 5000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("job_events" as any)

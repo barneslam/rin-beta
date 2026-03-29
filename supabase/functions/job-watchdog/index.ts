@@ -87,11 +87,32 @@ serve(async (req) => {
 
     // ------------------------------------------------------------------
     // 2. Find jobs in driver_offer_sent with no remaining valid offers
-    //    → move to reassignment_required
+    //    → re-queue for retry (up to MAX_DISPATCH_RETRIES), then reassignment_required
+    //    Customer is notified via SMS at each stage.
     // ------------------------------------------------------------------
+    const MAX_DISPATCH_RETRIES = 3;
+
+    const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
+    const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+    const twilioReady = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
+
+    async function sendCustomerSms(phone: string, message: string): Promise<void> {
+      if (!twilioReady) return;
+      const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+      await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+        {
+          method: "POST",
+          headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ To: phone, From: TWILIO_PHONE_NUMBER!, Body: message }),
+        }
+      ).catch((e) => console.error(`[WATCHDOG] Customer SMS failed: ${e}`));
+    }
+
     const { data: dispatchJobs, error: dispatchScanErr } = await supabase
       .from("jobs")
-      .select("job_id, created_at")
+      .select("job_id, user_id, created_at")
       .eq("job_status", "driver_offer_sent");
 
     if (dispatchScanErr) {
@@ -106,43 +127,110 @@ serve(async (req) => {
           .eq("offer_status", "pending");
 
         if (!pendingOffers || pendingOffers.length === 0) {
-          // All offers are expired/declined — no driver responded
-          console.log(`[WATCHDOG] Job ${job.job_id} has no pending offers — moving to reassignment_required`);
-
-          const { error: jobUpdateErr } = await supabase
-            .from("jobs")
-            .update({
-              job_status: "reassignment_required",
-              exception_code: "no_driver_response",
-              exception_message: "All dispatch offers expired or declined with no driver response. Manual reassignment required.",
-            })
+          // All offers expired/declined — count prior retry events for this job
+          const { count: retryCount } = await supabase
+            .from("job_events")
+            .select("event_id", { count: "exact", head: true })
             .eq("job_id", job.job_id)
-            .eq("job_status", "driver_offer_sent"); // guard against concurrent updates
+            .eq("event_type", "no_driver_response");
 
-          if (jobUpdateErr) {
-            console.error(`[WATCHDOG] Failed to update job ${job.job_id}: ${jobUpdateErr.message}`);
-            continue;
+          const attemptsUsed = retryCount ?? 0;
+          const isMaxRetries = attemptsUsed >= MAX_DISPATCH_RETRIES;
+
+          console.log(`[WATCHDOG] Job ${job.job_id} — no pending offers, retry_count=${attemptsUsed} max=${MAX_DISPATCH_RETRIES} escalate=${isMaxRetries}`);
+
+          // Fetch customer phone for SMS
+          let customerPhone: string | null = null;
+          if (job.user_id) {
+            const { data: user } = await supabase
+              .from("users")
+              .select("phone")
+              .eq("user_id", job.user_id)
+              .single();
+            customerPhone = user?.phone ?? null;
           }
 
-          await Promise.all([
-            supabase.from("audit_logs").insert({
-              job_id: job.job_id,
-              action_type: "No driver response — moved to reassignment_required by watchdog",
-              event_type: "reassignment_requested",
-              event_source: "job_watchdog",
-              old_value: { job_status: "driver_offer_sent" },
-              new_value: { job_status: "reassignment_required", exception_code: "no_driver_response" },
-            }),
-            supabase.from("job_events").insert({
+          if (isMaxRetries) {
+            // Max retries reached — escalate to dispatcher
+            const { error: jobUpdateErr } = await supabase
+              .from("jobs")
+              .update({
+                job_status: "reassignment_required",
+                exception_code: "no_driver_available",
+                exception_message: `No driver found after ${attemptsUsed} attempts. Manual reassignment required.`,
+              })
+              .eq("job_id", job.job_id)
+              .eq("job_status", "driver_offer_sent");
+
+            if (jobUpdateErr) {
+              console.error(`[WATCHDOG] Failed to escalate job ${job.job_id}: ${jobUpdateErr.message}`);
+              continue;
+            }
+
+            if (customerPhone) {
+              await sendCustomerSms(
+                customerPhone,
+                `RIN: We're having difficulty finding an available driver near you right now. Our dispatcher will contact you shortly to arrange assistance.`
+              );
+            }
+
+            await Promise.all([
+              supabase.from("audit_logs").insert({
+                job_id: job.job_id,
+                action_type: `No driver after ${attemptsUsed} attempts — escalated to reassignment_required`,
+                event_type: "reassignment_requested",
+                event_source: "job_watchdog",
+                old_value: { job_status: "driver_offer_sent" },
+                new_value: { job_status: "reassignment_required", exception_code: "no_driver_available" },
+              }),
+              supabase.from("job_events").insert({
+                job_id: job.job_id,
+                event_type: "no_driver_available",
+                event_category: "exception",
+                message: `Watchdog: no driver found after ${attemptsUsed} retries — escalated to dispatcher`,
+                new_value: { exception_code: "no_driver_available", retry_count: attemptsUsed },
+              }),
+            ]);
+
+            summary.jobs_moved_to_reassignment++;
+            console.log(`[WATCHDOG] Job ${job.job_id} escalated after ${attemptsUsed} retries`);
+
+          } else {
+            // Retries remaining — re-queue for another dispatch wave
+            const nextAttempt = attemptsUsed + 1;
+
+            const { error: jobUpdateErr } = await supabase
+              .from("jobs")
+              .update({
+                job_status: "ready_for_dispatch",
+                exception_code: null,
+                exception_message: null,
+              })
+              .eq("job_id", job.job_id)
+              .eq("job_status", "driver_offer_sent");
+
+            if (jobUpdateErr) {
+              console.error(`[WATCHDOG] Failed to re-queue job ${job.job_id}: ${jobUpdateErr.message}`);
+              continue;
+            }
+
+            if (customerPhone) {
+              await sendCustomerSms(
+                customerPhone,
+                `RIN: We're still searching for an available driver near you (attempt ${nextAttempt} of ${MAX_DISPATCH_RETRIES}). We'll keep trying and notify you as soon as a driver is confirmed.`
+              );
+            }
+
+            await supabase.from("job_events").insert({
               job_id: job.job_id,
               event_type: "no_driver_response",
-              event_category: "exception",
-              message: "Watchdog: all offers expired/declined with no driver acceptance — job needs manual reassignment",
-              new_value: { exception_code: "no_driver_response" },
-            }),
-          ]);
+              event_category: "dispatch",
+              message: `Watchdog: no driver accepted — re-queued for dispatch (attempt ${nextAttempt} of ${MAX_DISPATCH_RETRIES})`,
+              new_value: { job_status: "ready_for_dispatch", retry_attempt: nextAttempt },
+            });
 
-          summary.jobs_moved_to_reassignment++;
+            console.log(`[WATCHDOG] Job ${job.job_id} re-queued — attempt ${nextAttempt} of ${MAX_DISPATCH_RETRIES}`);
+          }
         }
       }
     }

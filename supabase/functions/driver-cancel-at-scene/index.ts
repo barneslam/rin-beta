@@ -1,10 +1,20 @@
 /**
- * driver-cancel-at-scene — triggered when an assigned driver sends CANCEL SMS.
- * Transitions job to driver_cancelled_at_scene, unassigns the driver,
- * notifies customer, and resets job for re-dispatch.
+ * driver-cancel-at-scene
  *
- * Request body: { jobId, driverId, driverName }
- * Response:     { success }
+ * Called when a driver cancels after being dispatched (equipment failure,
+ * safety concern, etc.). The driver has NOT completed the job, so:
+ *   - No Stripe capture (payment intent stays authorized for reassignment)
+ *   - No driver payout
+ *   - Job moves to driver_cancelled_at_scene
+ *   - Driver is unassigned
+ *   - Customer notified of delay
+ *
+ * Input:  { jobId, driverId, driverName, reason? }
+ * Output: { success: boolean }
+ *
+ * Called by:
+ *   1. twilio-webhook (driver replies CANCEL)
+ *   2. JobTracking UI (dispatcher clicks "Driver Unable to Complete")
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -27,24 +37,24 @@ serve(async (req) => {
     const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
     const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
     const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
-
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-      return jsonResp({ success: false, error: "SMS credentials not configured" }, 500);
-    }
+    const twilioReady = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { jobId, driverId, driverName } = await req.json();
+    const { jobId, driverId, driverName, reason } = await req.json();
     if (!jobId || !driverId) {
       return jsonResp({ success: false, error: "jobId and driverId are required" }, 400);
     }
 
-    console.log(`[CANCEL-AT-SCENE] Starting — jobId=${jobId} driverId=${driverId}`);
+    const cancelReason = reason || "Driver was unable to complete the service";
+    const name = driverName ?? "Driver";
+
+    console.log(`[CANCEL-AT-SCENE] Starting — jobId=${jobId} driverId=${driverId} reason="${cancelReason}"`);
 
     // Fetch job
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, job_status, assigned_driver_id, user_id, dispatch_attempt_count")
+      .select("job_id, job_status, assigned_driver_id, user_id")
       .eq("job_id", jobId)
       .single();
 
@@ -64,15 +74,15 @@ serve(async (req) => {
       return jsonResp({ success: false, error: "Driver is not assigned to this job" }, 403);
     }
 
-    const name = driverName ?? "Driver";
-
-    // 1. Transition job — unassign driver, reset for re-dispatch
+    // 1. Transition job — unassign driver, no Stripe capture
     const { error: updateErr } = await supabase
       .from("jobs")
       .update({
         job_status: "driver_cancelled_at_scene",
         assigned_driver_id: null,
-        driver_assigned_at: null,
+        assigned_truck_id: null,
+        exception_code: "driver_cancelled_at_scene",
+        exception_message: cancelReason,
       })
       .eq("job_id", jobId);
 
@@ -81,78 +91,84 @@ serve(async (req) => {
     }
 
     // 2. Log events
-    await supabase.from("job_events").insert({
-      job_id: jobId,
-      event_type: "driver_cancelled_at_scene",
-      event_category: "lifecycle",
-      message: `${name} cancelled at scene. Job reset for re-dispatch.`,
-      new_value: { job_status: "driver_cancelled_at_scene", previously_assigned: driverId },
-    });
+    await Promise.all([
+      supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "driver_cancelled_at_scene",
+        event_category: "lifecycle",
+        actor_type: "driver",
+        message: `${name} cancelled at scene — reason: ${cancelReason}. No compensation. Job reset for re-dispatch.`,
+        new_value: {
+          job_status: "driver_cancelled_at_scene",
+          previously_assigned: driverId,
+          reason: cancelReason,
+          no_compensation: true,
+        },
+      }),
+      supabase.from("audit_logs").insert({
+        job_id: jobId,
+        action_type: `Driver cancelled at scene: ${name}`,
+        event_type: "driver_cancelled",
+        event_source: "driver_sms",
+        old_value: { job_status: job.job_status, assigned_driver_id: driverId },
+        new_value: { job_status: "driver_cancelled_at_scene", assigned_driver_id: null, no_compensation: true },
+      }),
+    ]);
 
-    await supabase.from("audit_logs").insert({
-      job_id: jobId,
-      action_type: `Driver cancelled at scene: ${name}`,
-      event_type: "status_changed",
-      event_source: "driver_sms",
-      old_value: { job_status: job.job_status, assigned_driver_id: driverId },
-      new_value: { job_status: "driver_cancelled_at_scene", assigned_driver_id: null },
-    });
+    console.log(`[CANCEL-AT-SCENE] Job ${jobId} → driver_cancelled_at_scene, driver unassigned, no capture`);
 
-    // 3. Notify customer via SMS
-    const { data: customer } = await supabase
-      .from("users")
-      .select("phone")
-      .eq("user_id", job.user_id)
-      .single();
+    // 3. Notify customer via SMS (graceful skip if Twilio not configured)
+    if (!twilioReady) {
+      console.warn("[CANCEL-AT-SCENE] Twilio not configured — skipping customer SMS");
+    } else if (job.user_id) {
+      const { data: customer } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("user_id", job.user_id)
+        .single();
 
-    if (customer?.phone) {
-      const phoneCheck = validatePhone(customer.phone);
-      if (phoneCheck.valid) {
-        const twilioAuth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-        const resp = await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Basic ${twilioAuth}`,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              To: phoneCheck.e164,
-              From: TWILIO_PHONE_NUMBER,
-              Body:
-                `RIN: We're sorry — your driver encountered an issue and could not complete the job.\n\n` +
-                `We are finding you a replacement driver now. Please stay with your vehicle.`,
-            }),
+      if (customer?.phone) {
+        const phoneCheck = validatePhone(customer.phone);
+        if (phoneCheck.valid) {
+          const twilioAuth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+          const resp = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Basic ${twilioAuth}`,
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: new URLSearchParams({
+                To: phoneCheck.e164,
+                From: TWILIO_PHONE_NUMBER!,
+                Body:
+                  `RIN: We're sorry — your driver encountered an issue and was unable to complete the service.\n\n` +
+                  `A replacement driver is being arranged. Please stay with your vehicle.\n\n` +
+                  `You will not be charged for this interruption.`,
+              }),
+            }
+          );
+          const smsData = await resp.json();
+          if (resp.ok) {
+            console.log(`[CANCEL-AT-SCENE] Customer notified — to=${phoneCheck.e164} sid=${smsData.sid}`);
+            await supabase.from("job_events").insert({
+              job_id: jobId,
+              event_type: "customer_notified_of_cancellation",
+              event_category: "communication",
+              message: `Customer notified of driver cancellation — SID: ${smsData.sid}`,
+            });
+          } else {
+            console.error(`[CANCEL-AT-SCENE] Customer SMS failed — status=${resp.status}`);
           }
-        );
-
-        const smsData = await resp.json();
-        if (resp.ok) {
-          console.log(`[CANCEL-AT-SCENE] Customer notified — to=${phoneCheck.e164} sid=${smsData.sid}`);
-          await supabase.from("job_events").insert({
-            job_id: jobId,
-            event_type: "customer_update",
-            event_category: "customer_update",
-            message: "We're sorry — your driver encountered an issue and could not complete the job. We are finding a replacement driver now.",
-          });
         } else {
-          console.error(`[CANCEL-AT-SCENE] Customer SMS failed — status=${resp.status}`);
-          await supabase.from("job_events").insert({
-            job_id: jobId,
-            event_type: "cancel_at_scene_sms_failed",
-            event_category: "communication",
-            message: `Customer notification SMS failed: ${JSON.stringify(smsData)}`,
-          });
+          console.warn(`[CANCEL-AT-SCENE] Customer phone invalid (${phoneCheck.reason}) — skipping SMS`);
         }
-      } else {
-        console.warn(`[CANCEL-AT-SCENE] Customer phone invalid (${phoneCheck.reason}) — skipping SMS`);
       }
     }
 
-    console.log(`[CANCEL-AT-SCENE] Done — jobId=${jobId} reset to driver_cancelled_at_scene`);
+    return jsonResp({ success: true, new_status: "driver_cancelled_at_scene" });
 
-    return jsonResp({ success: true });
   } catch (error: unknown) {
     console.error("[CANCEL-AT-SCENE] Unhandled error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";

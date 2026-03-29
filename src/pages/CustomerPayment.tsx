@@ -100,6 +100,7 @@ export default function CustomerPayment() {
   const { data: job, isLoading: jobLoading } = useQuery({
     queryKey: ["job-payment", jobId],
     enabled: !!jobId,
+    refetchInterval: 5000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")

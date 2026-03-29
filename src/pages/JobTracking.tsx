@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,7 @@ import { useDriverLocation } from "@/hooks/useDriverLocation";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { JobStatus, Job } from "@/types/rin";
 import { toast } from "@/hooks/use-toast";
-import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
-import { Check, Edit, RefreshCw, UserX, XCircle, CreditCard, AlertTriangle, MapPin, Clock } from "lucide-react";
+import { Check, Edit, RefreshCw, UserX, XCircle, AlertTriangle, MapPin, Clock, WrenchIcon } from "lucide-react";
 import { AmendJobDialog } from "@/components/dispatch/AmendJobDialog";
 import { ReassignmentDialog } from "@/components/dispatch/ReassignmentDialog";
 import { DriverUnavailableDialog } from "@/components/dispatch/DriverUnavailableDialog";
@@ -23,6 +23,7 @@ const TRACKING_STAGES: JobStatus[] = [
   "driver_enroute",
   "driver_arrived",
   "service_in_progress",
+  "pending_completion_approval",
   "job_completed",
 ];
 
@@ -43,7 +44,32 @@ const JobTracking = () => {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [unavailableOpen, setUnavailableOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [capturing, setCapturing] = useState(false);
+  const [cancellingAtScene, setCancellingAtScene] = useState(false);
+
+  const handleDriverCancelAtScene = async () => {
+    if (!job?.assigned_driver_id) return;
+    setCancellingAtScene(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("driver-cancel-at-scene", {
+        body: {
+          jobId: job.job_id,
+          driverId: job.assigned_driver_id,
+          driverName: assignedDriver?.driver_name ?? "Driver",
+          reason: "Equipment failure — dispatcher triggered",
+        },
+      });
+      if (error) throw error;
+      if (data?.success) {
+        toast({ title: "Driver Cancelled", description: "Job moved to Driver Cancelled at Scene. Customer notified." });
+      } else {
+        toast({ title: "Error", description: data?.error || "Could not process cancellation", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setCancellingAtScene(false);
+    }
+  };
 
   const isDriverActive = job && ["driver_enroute", "driver_arrived", "service_in_progress", "payment_authorized"].includes(job.job_status);
   const { driverLocation, distanceKm, etaMinutes } = useDriverLocation(
@@ -81,35 +107,12 @@ const JobTracking = () => {
     : 0;
   const isPaymentWarning = job.job_status === "payment_authorization_required" && paymentAgeMinutes >= PAYMENT_WARNING_MINUTES;
 
-  // Capture failure from auto-capture
-  const hasCaptureFailure = job.job_status === "job_completed" &&
-    job.customer_update_message?.startsWith("⚠ Auto-capture failed");
-
   const handleAdvanceStatus = () => {
     if (!nextStage) return;
     updateJob.mutate(
       { jobId: job.job_id, updates: { job_status: nextStage }, eventSource: "tracking_screen" },
       { onSuccess: () => { toast({ title: "Status Updated", description: `Job is now: ${JOB_STATUS_LABELS[nextStage]}` }); } }
     );
-  };
-
-  const handleCapturePayment = async () => {
-    setCapturing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("capture-payment", { body: { jobId: job.job_id } });
-      if (error) throw error;
-      if (data?.success) {
-        toast({ title: "Payment Captured", description: "Funds have been captured successfully." });
-        // Clear failure message
-        await supabase.from("jobs").update({ customer_update_message: null }).eq("job_id", job.job_id);
-      } else {
-        toast({ title: "Capture Failed", description: data?.error || "Payment capture failed", variant: "destructive" });
-      }
-    } catch (err) {
-      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setCapturing(false);
-    }
   };
 
   return (
@@ -154,6 +157,20 @@ const JobTracking = () => {
             </Card>
           )}
 
+          {/* Driver cancelled at scene alert */}
+          {job.job_status === "driver_cancelled_at_scene" && (
+            <Card className="border-destructive/50">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2 text-destructive">
+                  <WrenchIcon className="h-4 w-4" />
+                  <p className="text-sm font-medium">
+                    Driver cancelled at scene — no compensation. Customer notified. Return to Driver Matching to reassign.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Payment failed warning */}
           {job.job_status === "payment_failed" && (
             <Card className="border-destructive/50">
@@ -165,23 +182,6 @@ const JobTracking = () => {
                       ? "Payment authorization expired — customer did not complete payment in time"
                       : "Payment authorization failed — awaiting customer retry"}
                   </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Capture failure alert */}
-          {hasCaptureFailure && (
-            <Card className="border-destructive/50">
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <CreditCard className="h-4 w-4" />
-                    <p className="text-sm font-medium">{job.customer_update_message}</p>
-                  </div>
-                  <Button size="sm" variant="destructive" onClick={handleCapturePayment} disabled={capturing}>
-                    {capturing ? "Retrying…" : "Retry Capture"}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -291,18 +291,8 @@ const JobTracking = () => {
                 </Button>
               )}
 
-              {job.job_status === "job_completed" && !hasCaptureFailure && (
-                <div className="mt-4 space-y-3">
-                  <p className="text-sm text-success font-medium">✅ Job completed.</p>
-                  <Button
-                    size="sm"
-                    onClick={handleCapturePayment}
-                    disabled={capturing}
-                  >
-                    <CreditCard className="h-4 w-4 mr-1.5" />
-                    {capturing ? "Capturing…" : "Capture Payment (Manual Fallback)"}
-                  </Button>
-                </div>
+              {job.job_status === "job_completed" && (
+                <p className="mt-4 text-sm text-success font-medium">✅ Job completed. Payment processed.</p>
               )}
             </CardContent>
           </Card>
@@ -324,6 +314,17 @@ const JobTracking = () => {
                   <Button variant="outline" size="sm" onClick={() => setUnavailableOpen(true)}>
                     <UserX className="h-4 w-4 mr-1.5" /> Mark Driver Unavailable
                   </Button>
+                  {["driver_arrived", "service_in_progress"].includes(job.job_status) && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleDriverCancelAtScene}
+                      disabled={cancellingAtScene}
+                    >
+                      <WrenchIcon className="h-4 w-4 mr-1.5" />
+                      {cancellingAtScene ? "Processing…" : "Driver Unable to Complete"}
+                    </Button>
+                  )}
                   <Button variant="destructive" size="sm" onClick={() => setCancelOpen(true)}>
                     <XCircle className="h-4 w-4 mr-1.5" /> Cancel Job
                   </Button>
