@@ -107,8 +107,33 @@ const JobTracking = () => {
     : 0;
   const isPaymentWarning = job.job_status === "payment_authorization_required" && paymentAgeMinutes >= PAYMENT_WARNING_MINUTES;
 
-  const handleAdvanceStatus = () => {
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false);
+
+  const handleAdvanceStatus = async () => {
     if (!nextStage) return;
+
+    // When advancing from pending_completion_approval → job_completed,
+    // call complete-job Phase 2 so the driver gets their receipt SMS.
+    if (job.job_status === "pending_completion_approval" && nextStage === "job_completed") {
+      setConfirmingCompletion(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("complete-job", {
+          body: { jobId: job.job_id, confirmed: true },
+        });
+        if (error) throw error;
+        if (data?.success) {
+          toast({ title: "Job Completed", description: "Payment processed. Driver notified." });
+        } else {
+          toast({ title: "Error", description: data?.error || "Could not complete job", variant: "destructive" });
+        }
+      } catch (err) {
+        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+      } finally {
+        setConfirmingCompletion(false);
+      }
+      return;
+    }
+
     updateJob.mutate(
       { jobId: job.job_id, updates: { job_status: nextStage }, eventSource: "tracking_screen" },
       { onSuccess: () => { toast({ title: "Status Updated", description: `Job is now: ${JOB_STATUS_LABELS[nextStage]}` }); } }
@@ -285,9 +310,9 @@ const JobTracking = () => {
                   className="mt-6"
                   size="sm"
                   onClick={handleAdvanceStatus}
-                  disabled={updateJob.isPending}
+                  disabled={updateJob.isPending || confirmingCompletion}
                 >
-                  Advance to: {JOB_STATUS_LABELS[nextStage]}
+                  {confirmingCompletion ? "Processing…" : `Advance to: ${JOB_STATUS_LABELS[nextStage]}`}
                 </Button>
               )}
 
