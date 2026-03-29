@@ -45,6 +45,7 @@ const JobTracking = () => {
   const [unavailableOpen, setUnavailableOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancellingAtScene, setCancellingAtScene] = useState(false);
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false);
 
   const handleDriverCancelAtScene = async () => {
     if (!job?.assigned_driver_id) return;
@@ -106,8 +107,6 @@ const JobTracking = () => {
     ? Math.floor((Date.now() - new Date(job.updated_at).getTime()) / 60000)
     : 0;
   const isPaymentWarning = job.job_status === "payment_authorization_required" && paymentAgeMinutes >= PAYMENT_WARNING_MINUTES;
-
-  const [confirmingCompletion, setConfirmingCompletion] = useState(false);
 
   const handleAdvanceStatus = async () => {
     if (!nextStage) return;
