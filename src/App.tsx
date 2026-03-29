@@ -20,6 +20,7 @@ import IncidentIntake from "./pages/IncidentIntake";
 import IncidentValidation from "./pages/IncidentValidation";
 import DispatchDecision from "./pages/DispatchDecision";
 import PricingAuth from "./pages/PricingAuth";
+import JobPricing from "./pages/JobPricing";
 import DriverMatching from "./pages/DriverMatching";
 import DriverOffer from "./pages/DriverOffer";
 import JobTracking from "./pages/JobTracking";
@@ -56,7 +57,8 @@ const App = () => (
           <Route path="/intake" element={<DispatcherLayout><IncidentIntake /></DispatcherLayout>} />
           <Route path="/validation" element={<DispatcherLayout><IncidentValidation /></DispatcherLayout>} />
           <Route path="/dispatch" element={<DispatcherLayout><DispatchDecision /></DispatcherLayout>} />
-          <Route path="/pricing" element={<DispatcherLayout><PricingAuth /></DispatcherLayout>} />
+          <Route path="/pricing" element={<DispatcherLayout><JobPricing /></DispatcherLayout>} />
+          <Route path="/pricing-advanced" element={<DispatcherLayout><PricingAuth /></DispatcherLayout>} />
           <Route path="/matching" element={<DispatcherLayout><DriverMatching /></DispatcherLayout>} />
           <Route path="/offer" element={<DispatcherLayout><DriverOffer /></DispatcherLayout>} />
           <Route path="/tracking" element={<DispatcherLayout><JobTracking /></DispatcherLayout>} />

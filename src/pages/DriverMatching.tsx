@@ -5,8 +5,8 @@ import { useActiveJob } from "@/context/JobContext";
 import { useDispatchRecommendation, useAutoDispatchOffer } from "@/hooks/useDispatchEngine";
 import { useDrivers, useTrucks, useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
 import { toast } from "sonner";
-import { AlertTriangle, Zap, Search } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { AlertTriangle, Zap, Search, Lock } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 
 const DriverMatching = () => {
   const { activeJobId } = useActiveJob();
@@ -22,6 +22,34 @@ const DriverMatching = () => {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">No active job. Start from Incident Intake.</p>
+      </div>
+    );
+  }
+
+  const pricingStatuses = ["pending_pricing", "pending_customer_price_approval", "payment_authorization_required"];
+  const needsPricing = pricingStatuses.includes(job.job_status as string);
+  if (needsPricing || (job.job_status !== "ready_for_dispatch" && job.job_status !== "driver_offer_sent" && job.job_status !== "no_driver_candidates")) {
+    return (
+      <div className="max-w-4xl space-y-6">
+        <div>
+          <h1 className="text-xl font-bold">Step 5 — Driver Matching</h1>
+        </div>
+        <Card className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="py-6 flex items-start gap-3">
+            <Lock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-sm text-amber-900 dark:text-amber-200">Pricing must be completed first</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                Job status: <span className="font-mono">{job.job_status}</span>
+                <br />
+                The price must be set and authorized by the customer before dispatch can begin.
+              </p>
+              <Button size="sm" variant="outline" className="mt-3" asChild>
+                <Link to="/pricing">Go to Pricing</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

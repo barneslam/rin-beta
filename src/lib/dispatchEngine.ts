@@ -150,7 +150,10 @@ export function classifyIncident(
 // ---------------------------------------------------------------------------
 
 export function matchTruckCapability(job: Job, trucks: Truck[]): Truck[] {
-  if (!job.required_truck_type_id) return [];
+  if (!job.required_truck_type_id) {
+    // No specific truck type required — any available truck is eligible
+    return trucks.filter((t) => t.status === "available");
+  }
   return trucks.filter(
     (t) =>
       t.truck_type_id === job.required_truck_type_id && t.status === "available"

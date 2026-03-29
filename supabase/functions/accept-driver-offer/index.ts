@@ -94,21 +94,22 @@ serve(async (req) => {
     }
 
     // -----------------------------------------------------------------------
-    // 2. Fetch driver name for logging
+    // 2. Fetch driver info for logging and SMS
     // -----------------------------------------------------------------------
     const { data: driver } = await supabase
       .from("drivers")
-      .select("driver_name")
+      .select("driver_name, company_name")
       .eq("driver_id", offer.driver_id)
       .single();
     const driverName = driver?.driver_name || "Unknown";
+    const driverCompany = driver?.company_name || null;
 
     // -----------------------------------------------------------------------
     // 3. Fetch current job state for audit trail
     // -----------------------------------------------------------------------
     const { data: currentJob } = await supabase
       .from("jobs")
-      .select("job_status, estimated_price, user_id")
+      .select("job_status, estimated_price, user_id, stripe_payment_intent_id")
       .eq("job_id", offer.job_id)
       .single();
 
@@ -154,16 +155,25 @@ serve(async (req) => {
       }).eq("driver_id", offer.driver_id);
     }
 
-    // 4d. Assign driver to job — transition to payment_authorization_required
-    // step_deadline_at = now + 30 min, matching check-payment-timeout EXPIRY_MINUTES
+    // 4d. Assign driver to job.
+    // New flow: Stripe payment was pre-authorized before dispatch (stripe_payment_intent_id present).
+    //   → skip payment step, go directly to driver_enroute.
+    // Old flow: no Stripe auth yet → go to payment_authorization_required.
+    //
+    // NOTE: Cannot use oldStatus === "ready_for_dispatch" because useAutoDispatchOffer sets
+    // job_status to "driver_offer_sent" when creating the offer — before the driver accepts.
+    // By the time this function runs, oldStatus is always "driver_offer_sent", never
+    // "ready_for_dispatch". Using stripe_payment_intent_id is the reliable discriminator.
+    const isNewFlow = !!(currentJob?.stripe_payment_intent_id);
+    const newJobStatus = isNewFlow ? "driver_enroute" : "payment_authorization_required";
     const paymentDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     const { error: jobUpdateErr } = await supabase.from("jobs").update({
       assigned_driver_id: offer.driver_id,
       assigned_truck_id: offer.truck_id,
-      job_status: "payment_authorization_required",
+      job_status: newJobStatus,
       reserved_driver_id: null,
       reservation_expires_at: null,
-      step_deadline_at: paymentDeadline,
+      step_deadline_at: isNewFlow ? null : paymentDeadline,
       exception_code: null,
       exception_message: null,
     }).eq("job_id", offer.job_id);
@@ -177,12 +187,15 @@ serve(async (req) => {
       }, 500);
     }
 
-    console.log(`[ACCEPT] State transitions complete — driver=${driverName} job=${offer.job_id} newStatus=payment_authorization_required`);
+    console.log(`[ACCEPT] State transitions complete — driver=${driverName} job=${offer.job_id} newStatus=${newJobStatus} isNewFlow=${isNewFlow}`);
 
     // -----------------------------------------------------------------------
     // 5. Create audit + event logs
     // -----------------------------------------------------------------------
     const sourceLabel = source === "sms" ? "via SMS" : source === "web_link" ? "via web link" : "via dispatcher";
+    const acceptMessage = isNewFlow
+      ? `Driver ${driverName} accepted job ${sourceLabel} — dispatched (price pre-authorized)`
+      : `Driver ${driverName} accepted job ${sourceLabel} — awaiting payment authorization`;
 
     await Promise.all([
       supabase.from("audit_logs").insert({
@@ -191,29 +204,41 @@ serve(async (req) => {
         event_type: "driver_assigned",
         event_source: source === "sms" ? "twilio_sms" : source === "web_link" ? "driver_sms" : "offer_screen",
         old_value: { job_status: oldStatus },
-        new_value: { job_status: "payment_authorization_required", assigned_driver_id: offer.driver_id },
+        new_value: { job_status: newJobStatus, assigned_driver_id: offer.driver_id },
       }),
       supabase.from("job_events").insert({
         job_id: offer.job_id,
         event_type: "driver_accepted",
         event_category: "dispatch",
         actor_type: source === "dispatcher" ? "dispatcher" : "driver",
-        message: `Driver ${driverName} accepted job ${sourceLabel} — awaiting payment authorization`,
+        message: acceptMessage,
         new_value: {
-          job_status: "payment_authorization_required",
+          job_status: newJobStatus,
           assigned_driver_id: offer.driver_id,
           source,
+          is_new_flow: isNewFlow,
         },
       }),
     ]);
 
     // -----------------------------------------------------------------------
-    // 6. Send payment SMS to customer (if pricing is available)
+    // 6. Send customer SMS — content depends on which flow we are in.
+    //
+    // NEW flow (ready_for_dispatch → driver_enroute):
+    //   Price was already approved by customer. Send "driver confirmed + on the way" SMS.
+    //
+    // OLD flow (driver_offer_sent → payment_authorization_required):
+    //   Price not yet approved. Send payment link SMS.
     // -----------------------------------------------------------------------
-    let paymentSmsStatus: "sent" | "no_pricing" | "invalid_phone" | "send_failed" | "no_credentials" = "no_pricing";
+    let customerSmsStatus: "sent" | "no_pricing" | "invalid_phone" | "send_failed" | "no_credentials" | "skipped" = "skipped";
     let customerPhone: string | null = null;
 
-    if (hasPricing && currentJob?.user_id) {
+    const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
+    const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+    const hasSmsCreds = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
+
+    if (currentJob?.user_id) {
       const { data: user } = await supabase
         .from("users")
         .select("phone")
@@ -223,122 +248,95 @@ serve(async (req) => {
       const rawPhone = user?.phone ?? "";
       customerPhone = rawPhone || null;
       const phoneCheck = validatePhone(rawPhone);
-      console.log(`[ACCEPT] Payment SMS phone check — raw="${rawPhone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"}`);
+      console.log(`[ACCEPT] Customer phone check — raw="${rawPhone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"}`);
 
       if (!phoneCheck.valid) {
-        // Phone is bad — set exception so dispatcher can fix manually
-        const exMsg = `Customer phone "${rawPhone}" is invalid (${phoneCheck.reason}) — payment SMS blocked after driver acceptance`;
+        const exMsg = `Customer phone "${rawPhone}" is invalid (${phoneCheck.reason}) — customer SMS blocked after driver acceptance`;
         console.error(`[ACCEPT] ${exMsg}`);
-        paymentSmsStatus = "invalid_phone";
-
+        customerSmsStatus = "invalid_phone";
         await Promise.all([
-          supabase.from("jobs").update({
-            exception_code: "invalid_customer_phone",
-            exception_message: exMsg,
-          }).eq("job_id", offer.job_id),
-          supabase.from("job_events").insert({
-            job_id: offer.job_id,
-            event_type: "payment_sms_blocked",
-            event_category: "exception",
-            message: exMsg,
-            new_value: { exception_code: "invalid_customer_phone", raw_phone: rawPhone, reason: phoneCheck.reason },
-          }),
+          supabase.from("jobs").update({ exception_code: "invalid_customer_phone", exception_message: exMsg }).eq("job_id", offer.job_id),
+          supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "customer_sms_blocked", event_category: "exception", message: exMsg, new_value: { raw_phone: rawPhone, reason: phoneCheck.reason } }),
         ]);
-      } else {
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-        const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
-        const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+      } else if (!hasSmsCreds) {
+        console.error("[ACCEPT] Customer SMS skipped — Twilio credentials not configured");
+        customerSmsStatus = "no_credentials";
+      } else if (isNewFlow) {
+        // NEW flow: price already confirmed, driver is on the way
+        const price = Number(currentJob.estimated_price);
+        const driverLine = driverCompany ? `${driverName} (${driverCompany})` : driverName;
+        const trackLink = `https://rin-beta.lovable.app/track/${offer.job_id}`;
+        const smsBody =
+          `RIN: Great news! Your driver ${driverLine} has been dispatched and is on the way.\n\n` +
+          `Confirmed price: $${price.toFixed(2)}\n` +
+          `Track your service: ${trackLink}\n\n` +
+          `Reply CANCEL to cancel (if driver has not yet arrived).`;
 
-        if (!LOVABLE_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) {
-          console.error("[ACCEPT] Payment SMS skipped — SMS credentials not configured");
-          paymentSmsStatus = "no_credentials";
+        try {
+          const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+          const smsResp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+            method: "POST",
+            headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER!, Body: smsBody }),
+          });
+
+          if (smsResp.ok) {
+            const smsData = await smsResp.json();
+            console.log(`[ACCEPT] Driver-confirmed SMS sent — to=${phoneCheck.e164} SID=${smsData.sid}`);
+            customerSmsStatus = "sent";
+            await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "driver_confirmed_sms_sent", event_category: "communication", message: `Driver confirmed SMS sent to ${phoneCheck.e164} — driver=${driverName} price=$${price.toFixed(2)} SID=${smsData.sid}` });
+          } else {
+            const errBody = await smsResp.text();
+            console.error(`[ACCEPT] Driver-confirmed SMS failed — to=${phoneCheck.e164} status=${smsResp.status} body=${errBody.slice(0, 200)}`);
+            customerSmsStatus = "send_failed";
+            await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "driver_confirmed_sms_failed", event_category: "exception", message: `Driver confirmed SMS failed to ${phoneCheck.e164} [${smsResp.status}]` });
+          }
+        } catch (smsErr) {
+          console.error(`[ACCEPT] Driver-confirmed SMS threw: ${smsErr}`);
+          customerSmsStatus = "send_failed";
+        }
+      } else {
+        // OLD flow: price not yet approved — send payment link
+        if (!hasPricing) {
+          console.log(`[ACCEPT] Pricing missing for job ${offer.job_id} — payment SMS withheld`);
+          customerSmsStatus = "no_pricing";
+          await supabase.from("jobs").update({ exception_code: "pricing_missing", exception_message: "Driver accepted but estimated_price is not set. Dispatcher must set price and send payment link." }).eq("job_id", offer.job_id);
+          await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "pricing_missing_warning", event_category: "exception", message: `Driver ${driverName} accepted but estimated_price is missing. Payment SMS withheld.`, new_value: { exception_code: "pricing_missing" } });
         } else {
           const price = Number(currentJob.estimated_price);
           const payLink = `https://rin-beta.lovable.app/pay/${offer.job_id}`;
           const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
           try {
-            const smsResp = await fetch(`${GATEWAY_URL}/Messages.json`, {
+            const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+            const smsResp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
               method: "POST",
-              headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                "X-Connection-Api-Key": TWILIO_API_KEY,
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER, Body: smsBody }),
+              headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ To: phoneCheck.e164, From: TWILIO_PHONE_NUMBER!, Body: smsBody }),
             });
 
             if (smsResp.ok) {
               const smsData = await smsResp.json();
               console.log(`[ACCEPT] Payment SMS sent — to=${phoneCheck.e164} SID=${smsData.sid}`);
-              paymentSmsStatus = "sent";
-
-              await supabase.from("job_events").insert({
-                job_id: offer.job_id,
-                event_type: "payment_sms_sent",
-                event_category: "payment",
-                message: `Payment SMS sent to ${phoneCheck.e164} ($${price.toFixed(2)}) — SID: ${smsData.sid}`,
-              });
+              customerSmsStatus = "sent";
+              await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "payment_sms_sent", event_category: "payment", message: `Payment SMS sent to ${phoneCheck.e164} ($${price.toFixed(2)}) — SID: ${smsData.sid}` });
             } else {
               const errBody = await smsResp.text();
-              const exMsg = `Payment SMS to ${phoneCheck.e164} failed — Twilio [${smsResp.status}]: ${errBody.slice(0, 200)}`;
-              console.error(`[ACCEPT] ${exMsg}`);
-              paymentSmsStatus = "send_failed";
-
-              await Promise.all([
-                supabase.from("jobs").update({
-                  exception_code: "payment_sms_failed",
-                  exception_message: `Dispatcher must resend payment link manually. Twilio error [${smsResp.status}].`,
-                }).eq("job_id", offer.job_id),
-                supabase.from("job_events").insert({
-                  job_id: offer.job_id,
-                  event_type: "payment_sms_failed",
-                  event_category: "exception",
-                  message: exMsg,
-                  new_value: { exception_code: "payment_sms_failed", to: phoneCheck.e164, twilio_status: smsResp.status },
-                }),
-              ]);
+              customerSmsStatus = "send_failed";
+              await supabase.from("jobs").update({ exception_code: "payment_sms_failed", exception_message: `Dispatcher must resend payment link manually. Twilio error [${smsResp.status}].` }).eq("job_id", offer.job_id);
+              await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "payment_sms_failed", event_category: "exception", message: `Payment SMS failed to ${phoneCheck.e164} [${smsResp.status}]: ${errBody.slice(0, 200)}` });
             }
           } catch (smsErr) {
-            const exMsg = `Payment SMS threw unexpectedly: ${smsErr}`;
-            console.error(`[ACCEPT] ${exMsg}`);
-            paymentSmsStatus = "send_failed";
-
-            await Promise.all([
-              supabase.from("jobs").update({
-                exception_code: "payment_sms_failed",
-                exception_message: "Unexpected error sending payment SMS — dispatcher must resend manually.",
-              }).eq("job_id", offer.job_id),
-              supabase.from("job_events").insert({
-                job_id: offer.job_id,
-                event_type: "payment_sms_failed",
-                event_category: "exception",
-                message: exMsg,
-                new_value: { exception_code: "payment_sms_failed" },
-              }),
-            ]);
+            customerSmsStatus = "send_failed";
+            await supabase.from("jobs").update({ exception_code: "payment_sms_failed", exception_message: "Unexpected error sending payment SMS." }).eq("job_id", offer.job_id);
           }
         }
       }
-    } else if (!hasPricing) {
-      console.log(`[ACCEPT] Pricing missing for job ${offer.job_id} — payment SMS withheld`);
-      await supabase.from("jobs").update({
-        exception_code: "pricing_missing",
-        exception_message: "Driver accepted but estimated_price is not set. Dispatcher must set price and send payment link.",
-      }).eq("job_id", offer.job_id);
-
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "pricing_missing_warning",
-        event_category: "exception",
-        message: `Driver ${driverName} accepted but estimated_price is missing. Payment SMS withheld — dispatcher must set price.`,
-        new_value: { exception_code: "pricing_missing" },
-      });
     }
 
-    console.log(`[ACCEPT] Payment SMS status — job=${offer.job_id} paymentSmsStatus=${paymentSmsStatus}`);
+    console.log(`[ACCEPT] Customer SMS status — job=${offer.job_id} status=${customerSmsStatus} isNewFlow=${isNewFlow}`);
 
-    console.log(`[ACCEPT] Complete — offerId=${offerId} driver_id=${offer.driver_id} driver=${driverName} job_id=${offer.job_id} user_id=${currentJob?.user_id ?? "?"} phone="${customerPhone ?? "?"}" source=${source} offer_status=accepted job_status=payment_authorization_required paymentSms=${paymentSmsStatus}`);
+    console.log(`[ACCEPT] Complete — offerId=${offerId} driver=${driverName} job=${offer.job_id} source=${source} newStatus=${newJobStatus} isNewFlow=${isNewFlow} customerSms=${customerSmsStatus}`);
 
     return jsonResponse({
       success: true,
@@ -346,8 +344,10 @@ serve(async (req) => {
       jobId: offer.job_id,
       driverId: offer.driver_id,
       driverName,
+      newJobStatus,
+      isNewFlow,
       pricingReady: !!hasPricing,
-      paymentSmsStatus,
+      customerSmsStatus,
     });
   } catch (error: unknown) {
     console.error("[ACCEPT] Error:", error);

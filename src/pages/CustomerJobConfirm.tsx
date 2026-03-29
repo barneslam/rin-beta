@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "sonner";
 import { CheckCircle2, XCircle, Loader2, MapPin } from "lucide-react";
 
@@ -84,7 +84,7 @@ const CustomerJobConfirm = () => {
       setIncidentTypes(types ?? []);
 
       // If already confirmed or cancelled, show the terminal state
-      if (jobData.job_status === "ready_for_dispatch" || jobData.sms_confirmed) {
+      if (["pending_pricing", "pending_customer_price_approval", "ready_for_dispatch"].includes(jobData.job_status) || jobData.sms_confirmed) {
         setDone("confirmed");
       } else if (jobData.job_status === "cancelled_by_customer") {
         setDone("cancelled");
@@ -112,7 +112,7 @@ const CustomerJobConfirm = () => {
     setSubmitting(true);
     try {
       const updates: Record<string, unknown> = {
-        job_status: "ready_for_dispatch",
+        job_status: "pending_pricing",
         sms_confirmed: true,
         sms_confirmed_at: new Date().toISOString(),
         confirmation_channel: "web_link",
@@ -137,7 +137,7 @@ const CustomerJobConfirm = () => {
         event_type: "customer_confirmed",
         event_category: "lifecycle",
         message: "Customer confirmed job details via web link",
-        new_value: { job_status: "ready_for_dispatch", confirmation_channel: "web_link" },
+        new_value: { job_status: "pending_pricing", confirmation_channel: "web_link" },
       });
 
       setDone("confirmed");
@@ -204,7 +204,7 @@ const CustomerJobConfirm = () => {
           <CardContent className="pt-8 pb-6">
             <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-4" />
             <h2 className="text-lg font-semibold mb-2">You're confirmed</h2>
-            <p className="text-sm text-muted-foreground">Your roadside request is confirmed and a dispatcher is assigning help. You'll receive a text when a driver is on the way.</p>
+            <p className="text-sm text-muted-foreground">Your details are confirmed. A dispatcher is reviewing your request and will send you a price estimate shortly for your approval.</p>
           </CardContent>
         </Card>
       </div>

@@ -100,7 +100,8 @@ export default function CustomerFormIntake() {
       return;
     }
 
-    const incidentDesc = issue === "Other" ? otherIssue : issue;
+    const selectedIssue = COMMON_ISSUES.find(i => i.label === issue);
+    const incidentDesc = issue === "Other" ? otherIssue : (selectedIssue?.keyword || issue);
 
     const payload = {
       ...createBlankPayload("form" as const),

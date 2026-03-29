@@ -131,7 +131,7 @@ export default function CustomerPayment() {
 
   const { data: paymentData, isLoading: paymentLoading, error: paymentError } = useQuery({
     queryKey: ["payment-intent", jobId],
-    enabled: !!jobId && !!job && hasPricing && (job.job_status === "payment_authorization_required" || job.job_status === "payment_failed"),
+    enabled: !!jobId && !!job && hasPricing && (["payment_authorization_required", "payment_failed", "pending_customer_price_approval"].includes(job.job_status)),
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("create-payment-intent", {
         body: { jobId },
@@ -173,7 +173,7 @@ export default function CustomerPayment() {
   }
 
   // If job is already past payment gate, redirect to tracking
-  if (!["payment_authorization_required", "payment_failed"].includes(job.job_status)) {
+  if (!["payment_authorization_required", "payment_failed", "pending_customer_price_approval"].includes(job.job_status)) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center">
         <CheckCircle2 className="w-12 h-12 text-success mb-4" />

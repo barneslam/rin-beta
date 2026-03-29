@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useActiveJob } from "@/context/JobContext";
 import { useIncidentTypes, useTruckTypes } from "@/hooks/useReferenceData";
 import { useDeviceLocation } from "@/hooks/useDeviceLocation";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "sonner";
 import { Navigation, Loader2, CheckCircle2, MapPin } from "lucide-react";
 

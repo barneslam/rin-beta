@@ -10,6 +10,7 @@ import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { useIncidentTypes } from "@/hooks/useReferenceData";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 import { validateJobForDispatch } from "@/lib/dispatchEngine";
 import { CheckCircle2, XCircle, Info, AlertTriangle } from "lucide-react";
 
@@ -40,6 +41,7 @@ const IncidentValidation = () => {
   const { data: job } = useJob(activeJobId);
   const updateJob = useUpdateJob();
   const { data: incidentTypes } = useIncidentTypes();
+  const navigate = useNavigate();
 
   const [form, setForm] = useState({
     vehicle_make: "",
@@ -81,18 +83,24 @@ const IncidentValidation = () => {
       return;
     }
     setPendingOverrideConfirm(false);
-    try {
-      await updateJob.mutateAsync({
-        jobId: job.job_id,
-        updates: {
-          job_status: "ready_for_dispatch",
-          ...(job.location_type ? {} : { location_type: "roadside" }),
-        },
-        eventSource: "validation_screen",
-      });
-      toast.success("Validation confirmed — ready for dispatch");
-    } catch {
-      toast.error("Failed to update");
+    if (force) {
+      // Override: bypass customer confirmation and pricing — go straight to ready_for_dispatch
+      try {
+        await updateJob.mutateAsync({
+          jobId: job.job_id,
+          updates: {
+            job_status: "ready_for_dispatch",
+            ...(job.location_type ? {} : { location_type: "roadside" }),
+          },
+          eventSource: "validation_screen_override",
+        });
+        toast.success("Override applied — job ready for dispatch");
+      } catch {
+        toast.error("Failed to update");
+      }
+    } else {
+      // Normal path: proceed to pricing step
+      navigate("/pricing");
     }
   };
 
@@ -344,7 +352,7 @@ const IncidentValidation = () => {
           onClick={() => handleConfirm(false)}
           disabled={!validation.valid || updateJob.isPending}
         >
-          Confirm &amp; Ready for Dispatch
+          Confirm &amp; Proceed to Pricing
         </Button>
         {!validation.valid && (
           <p className="text-xs text-muted-foreground">

@@ -203,5 +203,5 @@ export function matchIncidentTypeId(
           lower.includes(t.description.toLowerCase())))
   );
 
-  return match?.incident_type_id ?? incidentTypes[0]?.incident_type_id ?? null;
+  return match?.incident_type_id ?? null;
 }
