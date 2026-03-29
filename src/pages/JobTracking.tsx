@@ -20,6 +20,7 @@ import { PAYMENT_WARNING_MINUTES, PAYMENT_EXPIRY_MINUTES } from "@/lib/paymentCo
 const TRACKING_STAGES: JobStatus[] = [
   "payment_authorization_required",
   "payment_authorized",
+  "driver_assigned",
   "driver_enroute",
   "driver_arrived",
   "service_in_progress",
