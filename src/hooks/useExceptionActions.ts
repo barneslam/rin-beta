@@ -55,6 +55,16 @@ export function useAmendJob() {
         message: "Revised quote pending your approval",
       }] as any);
 
+      // Send SMS to customer requesting approval of the revised charge
+      await supabase.functions.invoke("send-amendment-sms", {
+        body: {
+          jobId,
+          oldPrice: oldJob?.estimated_price ?? null,
+          newPrice: updates.estimated_price ?? oldJob?.estimated_price ?? null,
+          reason: amendmentReason,
+        },
+      });
+
       return data;
     },
     onSuccess: () => {
