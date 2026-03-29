@@ -28,7 +28,8 @@ const DriverMatching = () => {
 
   const pricingStatuses = ["pending_pricing", "pending_customer_price_approval", "payment_authorization_required"];
   const needsPricing = pricingStatuses.includes(job.job_status as string);
-  if (needsPricing || (job.job_status !== "ready_for_dispatch" && job.job_status !== "driver_offer_sent" && job.job_status !== "no_driver_candidates")) {
+  const dispatchReadyStatuses = ["ready_for_dispatch", "payment_authorized", "driver_offer_sent", "no_driver_candidates"];
+  if (needsPricing || !dispatchReadyStatuses.includes(job.job_status as string)) {
     return (
       <div className="max-w-4xl space-y-6">
         <div>

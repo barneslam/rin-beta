@@ -109,7 +109,7 @@ const DispatchControlPanel = () => {
 
   const exceptionJobs = (jobs ?? []).filter((j) => EXCEPTION_STATUSES.includes(j.job_status));
   const paymentPendingJobs = (jobs ?? []).filter((j) =>
-    ["pending_customer_price_approval", "payment_authorization_required", "payment_failed"].includes(j.job_status)
+    ["pending_customer_price_approval", "payment_authorization_required", "payment_failed", "payment_authorized"].includes(j.job_status)
   );
   const paymentPendingNoPriceJobs = paymentPendingJobs.filter((j) => !j.estimated_price || Number(j.estimated_price) <= 0);
   const paymentPendingWithPriceJobs = paymentPendingJobs.filter((j) => j.estimated_price && Number(j.estimated_price) > 0);
