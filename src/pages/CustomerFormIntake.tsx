@@ -173,17 +173,6 @@ export default function CustomerFormIntake() {
       } as any);
 
       setCreatedJobId(job.job_id);
-
-      // Send confirmation SMS (fire-and-forget)
-      supabaseExternal.functions.invoke("send-customer-confirmation", {
-        body: {
-          phone: processed.caller_phone,
-          jobId: job.job_id,
-          userName: processed.caller_name,
-          channel: "form",
-        },
-      }).catch((err) => console.error("Confirmation SMS error:", err));
-
       setStep("confirming");
       setSubmitting(false);
     } catch {
