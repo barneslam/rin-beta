@@ -105,7 +105,6 @@ export function useDispatchRecommendation(jobId: string | null) {
   const { data: truckTypes } = useTruckTypes();
   const { data: equipment } = useEquipment();
   const { data: recentOfferCounts } = useRecentOfferCounts();
-  const { data: excludedDriverIds } = useExcludedDriverIds(jobId);
 
   const isLoading = jobLoading || driversLoading || trucksLoading || incidentLoading;
 
