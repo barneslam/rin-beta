@@ -155,7 +155,21 @@ serve(async (req) => {
       `Review offer:\n${offerLink}\n\n` +
       `Reply YES to accept, NO to decline.`;
 
-    // ── 6. Log attempt ───────────────────────────────────────────────────────
+    // ── 6. Advance job_status → driver_offer_sent BEFORE SMS ────────────────
+    // The offer record exists and the driver can accept via web link regardless
+    // of SMS delivery. Status must reflect the offer lifecycle, not SMS success.
+    if (TRANSITION_TO_OFFER_SENT.includes(job.job_status)) {
+      await supabase.from("jobs").update({ job_status: "driver_offer_sent" }).eq("job_id", offer.job_id);
+      await supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "job_status_updated",
+        event_category: "dispatch",
+        message: `Status: ${job.job_status} → driver_offer_sent (offer_id=${offer_id})`,
+      });
+      console.log(`[SEND-OFFER] Status: ${job.job_status} → driver_offer_sent`);
+    }
+
+    // ── 7. Log SMS attempt ───────────────────────────────────────────────────
     await supabase.from("job_events").insert({
       job_id: offer.job_id,
       event_type: "driver_sms_attempt",
@@ -163,7 +177,7 @@ serve(async (req) => {
       message: `Offer SMS attempt — driver=${driver.driver_name} (${phoneCheck.e164}) offer_id=${offer_id}`,
     });
 
-    // ── 7. Send via Twilio ───────────────────────────────────────────────────
+    // ── 8. Send via Twilio (best-effort) ─────────────────────────────────────
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
     const smsResp = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
@@ -189,16 +203,19 @@ serve(async (req) => {
           new_value: { offer_id, driver_id: offer.driver_id, http_status: smsResp.status },
         }),
       ]);
+      // SMS failed but offer is live — driver can still accept via web link
       return jsonResp({
-        success: false,
-        outcome: "sms_failed",
-        error_code: "twilio_error",
-        error: `Twilio error [${smsResp.status}]`,
-        context: { offer_id, twilio_code: smsData.code },
-      }, 502);
+        success: true,
+        outcome: "offer_sent",
+        sms_outcome: "sms_failed",
+        offer_id,
+        driver_id: offer.driver_id,
+        driver_name: driver.driver_name,
+        message: "Offer created and status updated; SMS delivery failed but driver can accept via web link",
+      });
     }
 
-    // ── 8. Record success ────────────────────────────────────────────────────
+    // ── 9. Record SMS success ────────────────────────────────────────────────
     const sid = smsData.sid as string;
     console.log(`[SEND-OFFER] SMS sent — driver=${driver.driver_name} to=${phoneCheck.e164} SID=${sid}`);
 
@@ -225,18 +242,6 @@ serve(async (req) => {
         new_value: { offer_id, driver_id: offer.driver_id, driver_name: driver.driver_name, sid },
       }),
     ]);
-
-    // Advance job_status → driver_offer_sent if in a matchable state
-    if (TRANSITION_TO_OFFER_SENT.includes(job.job_status)) {
-      await supabase.from("jobs").update({ job_status: "driver_offer_sent" }).eq("job_id", offer.job_id);
-      await supabase.from("job_events").insert({
-        job_id: offer.job_id,
-        event_type: "job_status_updated",
-        event_category: "dispatch",
-        message: `Status: ${job.job_status} → driver_offer_sent (offer_id=${offer_id})`,
-      });
-      console.log(`[SEND-OFFER] Status: ${job.job_status} → driver_offer_sent`);
-    }
 
     return jsonResp({
       success:     true,
