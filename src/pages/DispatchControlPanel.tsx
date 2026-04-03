@@ -291,12 +291,14 @@ const DispatchControlPanel = () => {
               </div>
 
               {/* Dispatch Offers */}
-              {dispatchOffers && dispatchOffers.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Dispatch Offers ({dispatchOffers.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Dispatch Offers ({dispatchOffers?.length ?? 0})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!dispatchOffers || dispatchOffers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No data yet.</p>
+                  ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -324,17 +326,19 @@ const DispatchControlPanel = () => {
                         })}
                       </TableBody>
                     </Table>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Decision Logs */}
-              {decisionLogs && decisionLogs.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Decision Logs ({decisionLogs.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Decision Logs ({decisionLogs?.length ?? 0})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!decisionLogs || decisionLogs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No data yet.</p>
+                  ) : (
                     <div className="space-y-3">
                       {decisionLogs.map((log) => (
                         <div key={log.id} className="rounded border border-border p-3">
@@ -351,9 +355,9 @@ const DispatchControlPanel = () => {
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Job Events Timeline */}
               <Card>
