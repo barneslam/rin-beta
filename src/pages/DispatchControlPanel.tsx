@@ -128,6 +128,28 @@ const DispatchControlPanel = () => {
   const canMatchDrivers = selectedJob?.job_status === "ready_for_dispatch";
   const canStartDispatch = selectedJob?.job_status === "dispatch_recommendation_ready";
 
+  const isDev = import.meta.env.DEV;
+  const canDevBypass = isDev && selectedJob?.job_status === "payment_authorization_required";
+  const [bypassLoading, setBypassLoading] = useState(false);
+
+  const handleDevBypass = async () => {
+    if (!selectedJobId) return;
+    setBypassLoading(true);
+    try {
+      const { error } = await supabase
+        .from("jobs")
+        .update({ job_status: "ready_for_dispatch" as any } as any)
+        .eq("job_id", selectedJobId);
+      if (error) throw error;
+      toast({ title: "DEV: Status overridden to ready_for_dispatch" });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    } catch (err) {
+      toast({ title: "Override failed", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setBypassLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-0 overflow-hidden">
       {/* ===== LEFT PANEL: Job List ===== */}
@@ -264,7 +286,18 @@ const DispatchControlPanel = () => {
                     <div>
                       <dt className="text-muted-foreground text-xs">Assigned Driver</dt>
                       <dd>{selectedJob.assigned_driver_id ? driverMap[selectedJob.assigned_driver_id]?.driver_name ?? fmtShortId(selectedJob.assigned_driver_id) : "Unassigned"}</dd>
-                    </div>
+                {canDevBypass && (
+                  <Button
+                    onClick={handleDevBypass}
+                    disabled={bypassLoading}
+                    variant="outline"
+                    className="gap-2 border-destructive text-destructive hover:bg-destructive/10"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    {bypassLoading ? "Overriding…" : "DEV: Skip Payment"}
+                  </Button>
+                )}
+              </div>
                   </dl>
                 </CardContent>
               </Card>
