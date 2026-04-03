@@ -226,12 +226,11 @@ export default function CustomerFormIntake() {
           {step === "confirming" ? (
             <>
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                <MessageSquare className="w-8 h-8 text-primary" />
+                <CheckCircle2 className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-xl font-semibold text-sidebar-foreground">Confirm your request</h2>
+              <h2 className="text-xl font-semibold text-sidebar-foreground">Review & Confirm</h2>
               <p className="text-sidebar-foreground/70 text-sm">
-                We sent a confirmation SMS to <span className="font-medium text-sidebar-foreground">{callerPhone}</span>
-                . Reply <span className="font-bold">YES</span> to confirm, or tap the button below.
+                Please confirm your roadside assistance request. Once confirmed, we'll begin finding a driver for you.
               </p>
               <Button
                 onClick={handleWebConfirm}
@@ -243,7 +242,7 @@ export default function CustomerFormIntake() {
                 ) : (
                   <CheckCircle2 className="w-5 h-5 mr-2" />
                 )}
-                Confirm Now
+                Confirm & Get Help
               </Button>
               <p className="text-xs text-sidebar-foreground/40">Dispatch will begin after confirmation.</p>
             </>
