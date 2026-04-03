@@ -128,6 +128,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       ? { ...job, required_truck_type_id: classification.truckTypeId }
       : job;
 
+    const eligibleTrucks = matchTruckCapability(effectiveJob, trucks);
     const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks);
     const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks, {
       recentOfferCounts: recentOfferCounts ?? new Map(),
