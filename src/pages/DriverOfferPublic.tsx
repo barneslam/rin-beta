@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, AlertTriangle, Car, DollarSign, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { supabaseExternal } from "@/lib/supabaseExternal";
 
 interface OfferDetails {
   offer: {
@@ -34,8 +35,6 @@ const DriverOfferPublic = () => {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const functionUrl = "https://zyoszbmahxnfcokuzkuv.supabase.co/functions/v1/driver-respond";
-
   // Fetch offer details
   useEffect(() => {
     if (!offerId || !token) {
@@ -44,14 +43,13 @@ const DriverOfferPublic = () => {
       return;
     }
 
-    fetch(functionUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offerId, token, action: "view" }),
+    supabaseExternal.functions.invoke("driver-respond", {
+      body: { offerId, token, action: "view" },
     })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
+      .then(({ data, error: fnError }) => {
+        if (fnError) {
+          setError("Failed to load offer details.");
+        } else if (data?.error) {
           setError(data.error);
         } else {
           setDetails(data);
@@ -83,12 +81,10 @@ const DriverOfferPublic = () => {
     setSubmitting(true);
 
     try {
-      const res = await fetch(functionUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offerId, token, action }),
+      const { data, error: fnError } = await supabaseExternal.functions.invoke("driver-respond", {
+        body: { offerId, token, action },
       });
-      const data = await res.json();
+      if (fnError) throw fnError;
 
       if (data.success) {
         setActionResult(action === "accept" ? "accepted" : "declined");
