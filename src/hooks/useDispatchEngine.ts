@@ -143,7 +143,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       truckTypes: (truckTypes ?? []) as TruckType[],
       equipment: (equipment ?? []) as Equipment[],
     };
-  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment, recentOfferCounts, excludedDriverIds]);
+  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment, recentOfferCounts]);
 
   return { ...result, job, isLoading };
 }
