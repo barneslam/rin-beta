@@ -119,7 +119,7 @@ serve(async (req) => {
     console.log(`[ACCEPT] Job state — oldStatus=${oldStatus} hasPricing=${hasPricing} userId=${currentJob?.user_id}`);
 
     // State guard: only accept from valid pre-acceptance states
-    const VALID_ACCEPT_STATES = ["ready_for_dispatch", "driver_offer_sent"];
+    const VALID_ACCEPT_STATES = ["ready_for_dispatch", "driver_offer_sent", "dispatch_recommendation_ready"];
     if (!oldStatus || !VALID_ACCEPT_STATES.includes(oldStatus)) {
       await supabase.from("job_events").insert({
         job_id: offer.job_id,
