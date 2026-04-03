@@ -1,0 +1,1 @@
+SELECT 1; -- no-op migration to trigger types regeneration

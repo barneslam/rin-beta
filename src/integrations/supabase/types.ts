@@ -807,7 +807,7 @@ export type Database = {
       job_status:
         | "intake_started"
         | "intake_completed"
-        | "pending_customer_confirmation"
+        | "validation_required"
         | "ready_for_dispatch"
         | "driver_offer_sent"
         | "driver_assigned"
@@ -819,7 +819,6 @@ export type Database = {
         | "driver_arrived"
         | "vehicle_loaded"
         | "customer_reapproval_pending"
-        | "no_driver_candidates"
         | "reassignment_required"
         | "driver_unavailable"
         | "cancelled_by_customer"
@@ -828,10 +827,7 @@ export type Database = {
         | "payment_failed"
         | "service_in_progress"
         | "payment_authorized"
-        | "pending_pricing"
-        | "pending_customer_price_approval"
-        | "pending_amount_adjustment"
-        | "driver_cancelled_at_scene"
+        | "pending_completion_approval"
       offer_status: "pending" | "accepted" | "declined" | "expired"
       truck_status: "available" | "busy" | "offline"
     }
@@ -979,7 +975,7 @@ export const Constants = {
       job_status: [
         "intake_started",
         "intake_completed",
-        "pending_customer_confirmation",
+        "validation_required",
         "ready_for_dispatch",
         "driver_offer_sent",
         "driver_assigned",
@@ -991,7 +987,6 @@ export const Constants = {
         "driver_arrived",
         "vehicle_loaded",
         "customer_reapproval_pending",
-        "no_driver_candidates",
         "reassignment_required",
         "driver_unavailable",
         "cancelled_by_customer",
@@ -1000,10 +995,7 @@ export const Constants = {
         "payment_failed",
         "service_in_progress",
         "payment_authorized",
-        "pending_pricing",
-        "pending_customer_price_approval",
-        "pending_amount_adjustment",
-        "driver_cancelled_at_scene",
+        "pending_completion_approval",
       ],
       offer_status: ["pending", "accepted", "declined", "expired"],
       truck_status: ["available", "busy", "offline"],
