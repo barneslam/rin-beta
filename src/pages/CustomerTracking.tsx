@@ -3,8 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { JOB_STATUS_LABELS } from "@/types/rin";
 import { useDriverLocation } from "@/hooks/useDriverLocation";
-import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle, Wrench } from "lucide-react";
+import { useJobEventsForJob } from "@/hooks/useJobEventsForJob";
+import { Loader2, CheckCircle2, Truck, MapPin, Clock, User, CreditCard, AlertCircle, Wrench, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const POLL_INTERVAL = 10_000;
 
 const CUSTOMER_STEPS = [
   { key: "requested", label: "Help Requested", statuses: ["intake_started", "intake_completed", "validation_required"] },
@@ -40,9 +43,32 @@ const REASSIGNMENT_STATUSES = new Set([
   "customer_reapproval_pending",
 ]);
 
+/** Internal/system event types hidden from the customer feed */
+const HIDDEN_EVENT_TYPES = new Set([
+  "dispatch_engine_run",
+  "eligibility_filter",
+  "scoring_complete",
+  "debug",
+]);
+
 function getActiveStep(status: string): number {
   const idx = CUSTOMER_STEPS.findIndex((s) => s.statuses.includes(status));
   return idx >= 0 ? idx : 0;
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function formatEventLabel(event: { message?: string | null; event_type: string }): string {
+  if (event.message) return event.message;
+  return event.event_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function CustomerTracking() {
@@ -52,7 +78,7 @@ export default function CustomerTracking() {
   const { data: job, isLoading } = useQuery({
     queryKey: ["jobs", jobId],
     enabled: !!jobId,
-    refetchInterval: 5000,
+    refetchInterval: POLL_INTERVAL,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
@@ -77,6 +103,8 @@ export default function CustomerTracking() {
       return data;
     },
   });
+
+  const { data: jobEvents } = useJobEventsForJob(jobId);
 
   const isDriverActive = job && ["driver_enroute", "payment_authorized", "driver_arrived", "service_in_progress"].includes(job.job_status);
   const { etaMinutes: liveEta, distanceKm } = useDriverLocation(
@@ -108,6 +136,10 @@ export default function CustomerTracking() {
   const activeStep = isCancelled ? -1 : getActiveStep(job.job_status);
   const isPaymentStep = job.job_status === "payment_authorization_required" || job.job_status === "payment_failed";
   const displayEta = liveEta ?? (job.eta_minutes ? Number(job.eta_minutes) : null);
+
+  const visibleEvents = (jobEvents ?? []).filter(
+    (e) => !HIDDEN_EVENT_TYPES.has(e.event_type)
+  );
 
   return (
     <div className="min-h-screen bg-sidebar-background flex flex-col px-6 py-8">
@@ -141,6 +173,11 @@ export default function CustomerTracking() {
               ? "We're securing the next available driver"
               : JOB_STATUS_LABELS[job.job_status] || job.job_status}
           </p>
+          {job.updated_at && (
+            <p className="text-xs text-sidebar-accent-foreground/40">
+              Last updated {formatRelativeTime(job.updated_at)}
+            </p>
+          )}
         </div>
 
         {/* Payment action */}
@@ -231,6 +268,36 @@ export default function CustomerTracking() {
             </div>
           </div>
         )}
+
+        {/* Activity feed */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold text-sidebar-foreground">Activity</h2>
+          </div>
+
+          {visibleEvents.length === 0 ? (
+            <p className="text-xs text-sidebar-accent-foreground/40 pl-6">No updates yet</p>
+          ) : (
+            <div className="space-y-0 pl-2">
+              {visibleEvents.slice(0, 20).map((event) => (
+                <div key={event.event_id} className="flex items-start gap-3 py-2">
+                  <div className="flex flex-col items-center pt-1.5">
+                    <div className="w-2 h-2 rounded-full bg-primary/40 shrink-0" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-sidebar-foreground leading-snug">
+                      {formatEventLabel(event)}
+                    </p>
+                    <p className="text-xs text-sidebar-accent-foreground/40 mt-0.5">
+                      {formatRelativeTime(event.created_at)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
