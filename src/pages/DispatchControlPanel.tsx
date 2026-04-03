@@ -125,8 +125,8 @@ const DispatchControlPanel = () => {
     }
   };
 
-  const canMatchDrivers = selectedJob && ["ready_for_dispatch", "dispatch_recommendation_ready"].includes(selectedJob.job_status);
-  const canStartDispatch = selectedJob && ["ready_for_dispatch", "dispatch_recommendation_ready"].includes(selectedJob.job_status);
+  const canMatchDrivers = selectedJob?.job_status === "ready_for_dispatch";
+  const canStartDispatch = selectedJob?.job_status === "dispatch_recommendation_ready";
 
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-0 overflow-hidden">
