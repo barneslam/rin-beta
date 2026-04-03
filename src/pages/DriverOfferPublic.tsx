@@ -43,14 +43,13 @@ const DriverOfferPublic = () => {
       return;
     }
 
-    fetch(functionUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offerId, token, action: "view" }),
+    supabaseExternal.functions.invoke("driver-respond", {
+      body: { offerId, token, action: "view" },
     })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
+      .then(({ data, error: fnError }) => {
+        if (fnError) {
+          setError("Failed to load offer details.");
+        } else if (data?.error) {
           setError(data.error);
         } else {
           setDetails(data);
