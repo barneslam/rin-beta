@@ -12,10 +12,9 @@ import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { findOrCreateUserByPhone } from "@/hooks/useCreateCustomerUser";
 import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { toast } from "sonner";
-import { supabaseExternal } from "@/lib/supabaseExternal";
+import { supabaseExternal, supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { createBlankPayload } from "@/types/intake";
 import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
-import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 
 const COMMON_ISSUES = [
   { label: "Flat tire", keyword: "flat tire" },
