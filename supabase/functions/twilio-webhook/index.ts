@@ -225,6 +225,12 @@ async function handleDriverReply(
 
         if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
           const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+          await supabase.from("job_events").insert({
+            job_id: activeJob.job_id,
+            event_type: "customer_arrival_sms_attempt",
+            event_category: "communication",
+            message: `Sending arrival notification to customer (${user.phone})`,
+          });
           await fetch(
             `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
             {
@@ -239,7 +245,34 @@ async function handleDriverReply(
                 Body: `RIN: Your driver ${driver.driver_name} has arrived at your location and will begin service shortly.`,
               }),
             }
-          ).catch((e) => console.error(`[WEBHOOK] Arrival customer SMS failed: ${e}`));
+          ).then(async (resp) => {
+            const smsData = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+              console.log(`[WEBHOOK] Arrival customer SMS sent — to=${user.phone} sid=${smsData.sid}`);
+              await supabase.from("job_events").insert({
+                job_id: activeJob.job_id,
+                event_type: "customer_arrival_sms_sent",
+                event_category: "communication",
+                message: `Arrival SMS sent to customer (${user.phone}) — SID: ${smsData.sid}`,
+              });
+            } else {
+              console.error(`[WEBHOOK] Arrival customer SMS failed [${resp.status}]: ${JSON.stringify(smsData)}`);
+              await supabase.from("job_events").insert({
+                job_id: activeJob.job_id,
+                event_type: "customer_arrival_sms_failed",
+                event_category: "communication",
+                message: `Arrival SMS to customer (${user.phone}) failed [${resp.status}]`,
+              });
+            }
+          }).catch(async (e) => {
+            console.error(`[WEBHOOK] Arrival customer SMS threw: ${e}`);
+            await supabase.from("job_events").insert({
+              job_id: activeJob.job_id,
+              event_type: "customer_arrival_sms_failed",
+              event_category: "communication",
+              message: `Arrival SMS to customer threw: ${e instanceof Error ? e.message : String(e)}`,
+            });
+          });
         }
       }
     }

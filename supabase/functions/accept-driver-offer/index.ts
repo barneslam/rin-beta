@@ -2,8 +2,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -46,12 +44,12 @@ serve(async (req) => {
     const { offerId, source } = await req.json();
 
     if (!offerId || !source) {
-      return jsonResponse({ success: false, error: "offerId and source are required" }, 400);
+      return jsonResponse({ success: false, error_code: "missing_params", error: "offerId and source are required" }, 400);
     }
 
     const validSources = ["sms", "web_link", "dispatcher"];
     if (!validSources.includes(source)) {
-      return jsonResponse({ success: false, error: `Invalid source. Use: ${validSources.join(", ")}` }, 400);
+      return jsonResponse({ success: false, error_code: "invalid_source", error: `Invalid source. Use: ${validSources.join(", ")}` }, 400);
     }
 
     console.log(`[ACCEPT] Starting acceptance — offerId=${offerId} source=${source}`);
@@ -67,7 +65,7 @@ serve(async (req) => {
 
     if (offerErr || !offer) {
       console.log(`[ACCEPT] Offer not found — offerId=${offerId}`);
-      return jsonResponse({ success: false, error: "Offer not found" }, 404);
+      return jsonResponse({ success: false, error_code: "offer_not_found", error: "Offer not found", context: { offerId } }, 404);
     }
 
     console.log(`[ACCEPT] Offer found — status=${offer.offer_status} driver=${offer.driver_id} job=${offer.job_id}`);
@@ -77,8 +75,9 @@ serve(async (req) => {
       console.log(`[ACCEPT] Offer not pending — status=${offer.offer_status}`);
       return jsonResponse({
         success: false,
+        error_code: "offer_not_pending",
         error: `Offer is no longer pending (status: ${offer.offer_status})`,
-        status: offer.offer_status,
+        context: { offerId, offer_status: offer.offer_status },
       }, 409);
     }
 
@@ -88,8 +87,9 @@ serve(async (req) => {
       await supabase.from("dispatch_offers").update({ offer_status: "expired" }).eq("offer_id", offerId);
       return jsonResponse({
         success: false,
+        error_code: "offer_expired",
         error: "This offer has expired and is no longer active.",
-        status: "expired",
+        context: { offerId, expires_at: offer.expires_at },
       }, 410);
     }
 
@@ -118,6 +118,23 @@ serve(async (req) => {
 
     console.log(`[ACCEPT] Job state — oldStatus=${oldStatus} hasPricing=${hasPricing} userId=${currentJob?.user_id}`);
 
+    // State guard: only accept from valid pre-acceptance states
+    const VALID_ACCEPT_STATES = ["ready_for_dispatch", "driver_offer_sent"];
+    if (!oldStatus || !VALID_ACCEPT_STATES.includes(oldStatus)) {
+      await supabase.from("job_events").insert({
+        job_id: offer.job_id,
+        event_type: "offer_accept_blocked",
+        event_category: "exception",
+        message: `Accept blocked — job in invalid state: ${oldStatus} (offer_id=${offerId} source=${source})`,
+      });
+      return jsonResponse({
+        success: false,
+        error_code: "invalid_job_state",
+        error: `Job cannot accept driver in state: ${oldStatus}`,
+        context: { jobId: offer.job_id, offerId, current_status: oldStatus },
+      }, 409);
+    }
+
     // -----------------------------------------------------------------------
     // 4. Perform all state transitions
     // -----------------------------------------------------------------------
@@ -133,7 +150,7 @@ serve(async (req) => {
       .eq("offer_id", offerId);
     if (offerUpdateErr) {
       console.error(`[ACCEPT] FAILED to mark offer accepted — offerId=${offerId} error=${offerUpdateErr.message}`);
-      return jsonResponse({ success: false, error: `DB error updating offer: ${offerUpdateErr.message}` }, 500);
+      return jsonResponse({ success: false, error_code: "db_error", error: `DB error updating offer: ${offerUpdateErr.message}`, context: { offerId } }, 500);
     }
     console.log(`[ACCEPT] Offer marked accepted — offerId=${offerId}`);
 
@@ -181,9 +198,9 @@ serve(async (req) => {
       console.error(`[ACCEPT] FAILED to update job — job=${offer.job_id} error=${jobUpdateErr.message} code=${jobUpdateErr.code}`);
       return jsonResponse({
         success: false,
+        error_code: "db_error",
         error: `DB error updating job: ${jobUpdateErr.message}`,
-        jobId: offer.job_id,
-        offerId,
+        context: { jobId: offer.job_id, offerId },
       }, 500);
     }
 
@@ -294,6 +311,12 @@ serve(async (req) => {
         } catch (smsErr) {
           console.error(`[ACCEPT] Driver-confirmed SMS threw: ${smsErr}`);
           customerSmsStatus = "send_failed";
+          await supabase.from("job_events").insert({
+            job_id: offer.job_id,
+            event_type: "driver_confirmed_sms_failed",
+            event_category: "exception",
+            message: `Driver-confirmed SMS threw: ${smsErr instanceof Error ? smsErr.message : String(smsErr)}`,
+          });
         }
       } else {
         // OLD flow: price not yet approved — send payment link
@@ -329,6 +352,7 @@ serve(async (req) => {
           } catch (smsErr) {
             customerSmsStatus = "send_failed";
             await supabase.from("jobs").update({ exception_code: "payment_sms_failed", exception_message: "Unexpected error sending payment SMS." }).eq("job_id", offer.job_id);
+            await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "payment_sms_failed", event_category: "exception", message: `Payment SMS threw unexpected error: ${smsErr instanceof Error ? smsErr.message : String(smsErr)}` });
           }
         }
       }
@@ -390,10 +414,23 @@ serve(async (req) => {
                 message: `Driver confirmation SMS sent to ${driverName} (${phoneCheck.e164}) — SID: ${smsData.sid}`,
               });
             } else {
+              const errText = await smsResp.text().catch(() => "");
               console.error(`[ACCEPT] Driver confirmation SMS failed — status=${smsResp.status}`);
+              await supabase.from("job_events").insert({
+                job_id: offer.job_id,
+                event_type: "driver_confirmation_sms_failed",
+                event_category: "exception",
+                message: `Driver confirmation SMS failed to ${phoneCheck.e164} [${smsResp.status}]: ${errText.slice(0, 200)}`,
+              });
             }
           } catch (smsErr) {
             console.error(`[ACCEPT] Driver confirmation SMS threw: ${smsErr}`);
+            await supabase.from("job_events").insert({
+              job_id: offer.job_id,
+              event_type: "driver_confirmation_sms_failed",
+              event_category: "exception",
+              message: `Driver confirmation SMS threw: ${smsErr instanceof Error ? smsErr.message : String(smsErr)}`,
+            });
           }
         }
       }
@@ -415,7 +452,7 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error("[ACCEPT] Error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";
-    return jsonResponse({ success: false, error: msg }, 500);
+    return jsonResponse({ success: false, error_code: "internal_error", error: msg }, 500);
   }
 });
 

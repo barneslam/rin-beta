@@ -36,21 +36,59 @@ serve(async (req) => {
       });
     }
 
-    // Fetch offer (for token)
+    // Fetch offer — include status and sms_sent_at for idempotency guards
     const { data: offer, error: offerErr } = await supabase
       .from("dispatch_offers")
-      .select("token")
+      .select("token, offer_status, sms_sent_at")
       .eq("offer_id", offerId)
       .single();
-    if (offerErr || !offer) throw new Error("Offer not found");
+    if (offerErr || !offer) {
+      return new Response(JSON.stringify({
+        success: false, error_code: "offer_not_found",
+        error: "Offer not found", context: { offerId },
+      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (offer.offer_status !== "pending") {
+      return new Response(JSON.stringify({
+        success: false, error_code: "offer_not_pending",
+        error: `Offer is not pending (status: ${offer.offer_status})`,
+        context: { offerId, jobId, offer_status: offer.offer_status },
+      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (offer.sms_sent_at) {
+      return new Response(JSON.stringify({
+        success: false, error_code: "duplicate_sms",
+        error: "SMS already sent for this offer",
+        context: { offerId, jobId, sms_sent_at: offer.sms_sent_at },
+      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
-    // Fetch job
+    // Fetch job — include job_status for state guard
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("pickup_location, incident_type_id, vehicle_year, vehicle_make, vehicle_model, estimated_price")
+      .select("job_status, pickup_location, incident_type_id, vehicle_year, vehicle_make, vehicle_model, estimated_price")
       .eq("job_id", jobId)
       .single();
-    if (jobErr || !job) throw new Error("Job not found");
+    if (jobErr || !job) {
+      return new Response(JSON.stringify({
+        success: false, error_code: "job_not_found",
+        error: "Job not found", context: { jobId, offerId },
+      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    // State guard: only send if job is ready_for_dispatch
+    if (job.job_status !== "ready_for_dispatch") {
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "driver_sms_blocked",
+        event_category: "exception",
+        message: `Driver SMS blocked — job not ready_for_dispatch (current: ${job.job_status}) offer_id=${offerId}`,
+      });
+      return new Response(JSON.stringify({
+        success: false, error_code: "invalid_job_state",
+        error: `SMS blocked — job must be ready_for_dispatch (current: ${job.job_status})`,
+        context: { jobId, offerId, current_status: job.job_status },
+      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // Fetch driver
     const { data: driver, error: driverErr } = await supabase
@@ -58,8 +96,18 @@ serve(async (req) => {
       .select("phone, driver_name")
       .eq("driver_id", driverId)
       .single();
-    if (driverErr || !driver) throw new Error("Driver not found");
-    if (!driver.phone) throw new Error("Driver has no phone number");
+    if (driverErr || !driver) {
+      return new Response(JSON.stringify({
+        success: false, error_code: "driver_not_found",
+        error: "Driver not found", context: { driverId, jobId, offerId },
+      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (!driver.phone) {
+      return new Response(JSON.stringify({
+        success: false, error_code: "driver_no_phone",
+        error: "Driver has no phone number", context: { driverId, jobId, offerId },
+      }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const driverPhoneCheck = validatePhone(driver.phone);
     console.log(`[DRIVER-SMS] Phone check — raw="${driver.phone}" e164="${driverPhoneCheck.e164}" valid=${driverPhoneCheck.valid} reason=${driverPhoneCheck.reason ?? "ok"}`);
@@ -102,6 +150,14 @@ Review offer:
 ${offerLink}
 
 Reply YES to accept, NO to decline.`;
+
+    // Log attempt before calling Twilio
+    await supabase.from("job_events").insert({
+      job_id: jobId,
+      event_type: "driver_sms_attempt",
+      event_category: "communication",
+      message: `Attempting offer SMS to ${driver.driver_name} (${driverE164}) — offer_id=${offerId}`,
+    });
 
     // Send SMS via Twilio direct
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
@@ -161,7 +217,33 @@ Reply YES to accept, NO to decline.`;
         event_category: "communication",
         message: `Offer SMS sent to ${driver.driver_name} (${driver.phone}) — Twilio SID: ${data.sid}`,
       }),
+      supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "offer_sent",
+        event_category: "dispatch",
+        message: `Offer SMS confirmed sent — driver_id=${driverId} offer_id=${offerId} job_id=${jobId} SID: ${data.sid}`,
+      }),
     ]);
+
+    // Advance job status to driver_offer_sent — only if still ready_for_dispatch
+    const { data: currentJob } = await supabase
+      .from("jobs")
+      .select("job_status")
+      .eq("job_id", jobId)
+      .single();
+
+    if (currentJob?.job_status === "ready_for_dispatch") {
+      await supabase.from("jobs").update({ job_status: "driver_offer_sent" }).eq("job_id", jobId);
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "job_status_updated",
+        event_category: "dispatch",
+        message: `Status: ready_for_dispatch → driver_offer_sent (offer_id=${offerId})`,
+      });
+      console.log(`[DRIVER-SMS] Status → driver_offer_sent job=${jobId} offer=${offerId}`);
+    } else {
+      console.log(`[DRIVER-SMS] Status NOT updated — current=${currentJob?.job_status} (expected ready_for_dispatch) job=${jobId}`);
+    }
 
     console.log(`[DRIVER-SMS] Sent — driver=${driver.driver_name} to=${driverE164} job=${jobId} offer=${offerId} SID=${data.sid}`);
 
@@ -172,7 +254,11 @@ Reply YES to accept, NO to decline.`;
   } catch (error: unknown) {
     console.error("Error sending driver SMS:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
+    return new Response(JSON.stringify({
+      success: false,
+      error_code: "internal_error",
+      error: errorMessage,
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validatePhone } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,7 +29,11 @@ serve(async (req) => {
     const { phone, jobId } = await req.json();
 
     if (!phone || !jobId) {
-      return new Response(JSON.stringify({ error: "Missing phone or jobId" }), {
+      return new Response(JSON.stringify({
+        success: false,
+        error_code: "missing_params",
+        error: "Missing phone or jobId",
+      }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -69,6 +74,24 @@ serve(async (req) => {
       }),
     });
     console.log(`[CUSTOMER-SMS] confirmation_sms_job_fetched — vehicle_make=${job.vehicle_make ?? "null"} vehicle_model=${job.vehicle_model ?? "null"} vehicle_year=${job.vehicle_year ?? "null"} pickup_location=${job.pickup_location ?? "null"} incident_type_id=${job.incident_type_id ?? "null"}`);
+
+    // Phone validation — normalize and block invalid numbers before reaching Twilio
+    const phoneCheck = validatePhone(phone);
+    if (!phoneCheck.valid) {
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "confirmation_sms_phone_invalid",
+        event_category: "exception",
+        message: `Phone "${phone}" is invalid (${phoneCheck.reason}) — confirmation SMS blocked`,
+      });
+      console.error(`[CUSTOMER-SMS] phone invalid — raw="${phone}" reason=${phoneCheck.reason}`);
+      return new Response(JSON.stringify({
+        success: false,
+        error_code: "invalid_phone",
+        error: `Phone "${phone}" is invalid (${phoneCheck.reason})`,
+        context: { jobId },
+      }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // STAGE 2: Fetch incident type name
     let incidentName = "Not provided";
@@ -123,7 +146,7 @@ serve(async (req) => {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          To: phone,
+          To: phoneCheck.e164,
           From: TWILIO_PHONE_NUMBER,
           Body: smsBody,
         }),
@@ -159,7 +182,11 @@ serve(async (req) => {
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
+    return new Response(JSON.stringify({
+      success: false,
+      error_code: "internal_error",
+      error: errorMessage,
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
