@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Loader2, CheckCircle2, MessageSquare, Navigation } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, CheckCircle2, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
