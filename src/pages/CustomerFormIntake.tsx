@@ -402,7 +402,38 @@ export default function CustomerFormIntake() {
           </div>
         </div>
 
-        {/* Tow destination */}
+        {/* Can vehicle roll? */}
+        <div className="space-y-3">
+          <Label className="text-sidebar-foreground">
+            Can the vehicle be put into neutral so the wheels can roll?
+          </Label>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant={canVehicleRoll === true ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(true)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant={canVehicleRoll === false ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(false)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              variant={canVehicleRoll === null ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(null)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              Not sure
+            </Button>
+          </div>
+        </div>
         {(towRequired || drivable === false) && (
           <div className="space-y-2">
             <Label className="text-sidebar-foreground">Where should we tow your vehicle?</Label>
