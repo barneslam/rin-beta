@@ -164,7 +164,7 @@ export default function CustomerFormIntake() {
         vehicle_model: processed.vehicle_model || null,
         vehicle_year: processed.vehicle_year,
         vehicle_condition: processed.incident_description,
-        can_vehicle_roll: processed.drivable,
+        can_vehicle_roll: canVehicleRoll === undefined ? null : canVehicleRoll,
         incident_type_id: incidentTypeId,
         user_id: userId,
         language: processed.language,
