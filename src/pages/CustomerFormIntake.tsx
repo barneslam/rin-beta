@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Loader2, CheckCircle2, MessageSquare, Navigation } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, CheckCircle2, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { useAutoDispatchPipeline } from "@/hooks/useAutoDispatchPipeline";
 import { findOrCreateUserByPhone } from "@/hooks/useCreateCustomerUser";
 import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { toast } from "sonner";
-import { supabaseExternal, supabaseExternal as supabase } from "@/lib/supabaseExternal";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { createBlankPayload } from "@/types/intake";
 import { processIntakePayload, matchIncidentTypeId } from "@/lib/intakeProcessor";
 
@@ -45,6 +45,7 @@ export default function CustomerFormIntake() {
   const [callerName, setCallerName] = useState("");
   const [callerPhone, setCallerPhone] = useState("");
   const [drivable, setDrivable] = useState<boolean | null>(null);
+  const [canVehicleRoll, setCanVehicleRoll] = useState<boolean | null | undefined>(undefined);
   const [towRequired, setTowRequired] = useState(false);
   const [destination, setDestination] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -163,7 +164,7 @@ export default function CustomerFormIntake() {
         vehicle_model: processed.vehicle_model || null,
         vehicle_year: processed.vehicle_year,
         vehicle_condition: processed.incident_description,
-        can_vehicle_roll: processed.drivable,
+        can_vehicle_roll: canVehicleRoll === undefined ? null : canVehicleRoll,
         incident_type_id: incidentTypeId,
         user_id: userId,
         language: processed.language,
@@ -172,17 +173,6 @@ export default function CustomerFormIntake() {
       } as any);
 
       setCreatedJobId(job.job_id);
-
-      // Send confirmation SMS (fire-and-forget)
-      supabaseExternal.functions.invoke("send-customer-confirmation", {
-        body: {
-          phone: processed.caller_phone,
-          jobId: job.job_id,
-          userName: processed.caller_name,
-          channel: "form",
-        },
-      }).catch((err) => console.error("Confirmation SMS error:", err));
-
       setStep("confirming");
       setSubmitting(false);
     } catch {
@@ -236,12 +226,11 @@ export default function CustomerFormIntake() {
           {step === "confirming" ? (
             <>
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                <MessageSquare className="w-8 h-8 text-primary" />
+                <CheckCircle2 className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-xl font-semibold text-sidebar-foreground">Confirm your request</h2>
+              <h2 className="text-xl font-semibold text-sidebar-foreground">Review & Confirm</h2>
               <p className="text-sidebar-foreground/70 text-sm">
-                We sent a confirmation SMS to <span className="font-medium text-sidebar-foreground">{callerPhone}</span>
-                . Reply <span className="font-bold">YES</span> to confirm, or tap the button below.
+                Please confirm your roadside assistance request. Once confirmed, we'll begin finding a driver for you.
               </p>
               <Button
                 onClick={handleWebConfirm}
@@ -253,7 +242,7 @@ export default function CustomerFormIntake() {
                 ) : (
                   <CheckCircle2 className="w-5 h-5 mr-2" />
                 )}
-                Confirm Now
+                Confirm & Get Help
               </Button>
               <p className="text-xs text-sidebar-foreground/40">Dispatch will begin after confirmation.</p>
             </>
@@ -412,7 +401,38 @@ export default function CustomerFormIntake() {
           </div>
         </div>
 
-        {/* Tow destination */}
+        {/* Can vehicle roll? */}
+        <div className="space-y-3">
+          <Label className="text-sidebar-foreground">
+            Can the vehicle be put into neutral so the wheels can roll?
+          </Label>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant={canVehicleRoll === true ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(true)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant={canVehicleRoll === false ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(false)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              variant={canVehicleRoll === null ? "default" : "outline"}
+              onClick={() => setCanVehicleRoll(null)}
+              className="flex-1 h-12 rounded-xl border-sidebar-border"
+            >
+              Not sure
+            </Button>
+          </div>
+        </div>
         {(towRequired || drivable === false) && (
           <div className="space-y-2">
             <Label className="text-sidebar-foreground">Where should we tow your vehicle?</Label>
