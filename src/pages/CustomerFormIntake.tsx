@@ -45,6 +45,7 @@ export default function CustomerFormIntake() {
   const [callerName, setCallerName] = useState("");
   const [callerPhone, setCallerPhone] = useState("");
   const [drivable, setDrivable] = useState<boolean | null>(null);
+  const [canVehicleRoll, setCanVehicleRoll] = useState<boolean | null | undefined>(undefined);
   const [towRequired, setTowRequired] = useState(false);
   const [destination, setDestination] = useState("");
   const [submitting, setSubmitting] = useState(false);
