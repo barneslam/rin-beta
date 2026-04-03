@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, AlertTriangle, Car, DollarSign, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { supabaseExternal } from "@/lib/supabaseExternal";
 
 interface OfferDetails {
   offer: {
@@ -33,8 +34,6 @@ const DriverOfferPublic = () => {
   const [submitting, setSubmitting] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const functionUrl = "https://zyoszbmahxnfcokuzkuv.supabase.co/functions/v1/driver-respond";
 
   // Fetch offer details
   useEffect(() => {
