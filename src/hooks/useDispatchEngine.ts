@@ -105,7 +105,6 @@ export function useDispatchRecommendation(jobId: string | null) {
   const { data: truckTypes } = useTruckTypes();
   const { data: equipment } = useEquipment();
   const { data: recentOfferCounts } = useRecentOfferCounts();
-  const { data: excludedDriverIds } = useExcludedDriverIds(jobId);
 
   const isLoading = jobLoading || driversLoading || trucksLoading || incidentLoading;
 
@@ -130,9 +129,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       : job;
 
     const eligibleTrucks = matchTruckCapability(effectiveJob, trucks);
-    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks, 60, {
-      excludeDriverIds: excludedDriverIds,
-    });
+    const eligible = filterEligibleDrivers(effectiveJob, drivers, eligibleTrucks);
     const rankedDrivers = rankDrivers(eligible, effectiveJob, eligibleTrucks, {
       recentOfferCounts: recentOfferCounts ?? new Map(),
       requiredTruckTypeId: effectiveJob.required_truck_type_id ?? undefined,
@@ -147,7 +144,7 @@ export function useDispatchRecommendation(jobId: string | null) {
       truckTypes: (truckTypes ?? []) as TruckType[],
       equipment: (equipment ?? []) as Equipment[],
     };
-  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment, recentOfferCounts, excludedDriverIds]);
+  }, [job, drivers, trucks, incidentTypes, truckTypes, equipment, recentOfferCounts]);
 
   return { ...result, job, isLoading };
 }
