@@ -20,7 +20,7 @@ export function useJob(jobId: string | null) {
   return useQuery({
     queryKey: ["jobs", jobId],
     enabled: !!jobId,
-    refetchInterval: 5000,
+    refetchInterval: 10_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
