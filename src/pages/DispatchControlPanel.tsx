@@ -286,7 +286,18 @@ const DispatchControlPanel = () => {
                     <div>
                       <dt className="text-muted-foreground text-xs">Assigned Driver</dt>
                       <dd>{selectedJob.assigned_driver_id ? driverMap[selectedJob.assigned_driver_id]?.driver_name ?? fmtShortId(selectedJob.assigned_driver_id) : "Unassigned"}</dd>
-                    </div>
+                {canDevBypass && (
+                  <Button
+                    onClick={handleDevBypass}
+                    disabled={bypassLoading}
+                    variant="outline"
+                    className="gap-2 border-destructive text-destructive hover:bg-destructive/10"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    {bypassLoading ? "Overriding…" : "DEV: Skip Payment"}
+                  </Button>
+                )}
+              </div>
                   </dl>
                 </CardContent>
               </Card>
