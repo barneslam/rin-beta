@@ -81,12 +81,10 @@ const DriverOfferPublic = () => {
     setSubmitting(true);
 
     try {
-      const res = await fetch(functionUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offerId, token, action }),
+      const { data, error: fnError } = await supabaseExternal.functions.invoke("driver-respond", {
+        body: { offerId, token, action },
       });
-      const data = await res.json();
+      if (fnError) throw fnError;
 
       if (data.success) {
         setActionResult(action === "accept" ? "accepted" : "declined");
