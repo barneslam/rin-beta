@@ -28,7 +28,7 @@ serve(async (req) => {
     // Fetch job
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, estimated_price, user_id, job_status")
+      .select("job_id, estimated_price, user_id, job_status, customer_phone")
       .eq("job_id", jobId)
       .single();
     if (jobErr || !job) {
