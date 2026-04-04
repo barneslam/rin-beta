@@ -167,6 +167,7 @@ export default function CustomerFormIntake() {
         can_vehicle_roll: canVehicleRoll === undefined ? null : canVehicleRoll,
         incident_type_id: incidentTypeId,
         user_id: userId,
+        customer_phone: processed.caller_phone || null,
         language: processed.language,
         location_type: "roadside",
         sms_confirmed: false,

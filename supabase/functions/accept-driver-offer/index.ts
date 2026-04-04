@@ -255,14 +255,17 @@ serve(async (req) => {
     const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
     const hasSmsCreds = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
 
-    if (currentJob?.user_id) {
-      const { data: user } = await supabase
-        .from("users")
-        .select("phone")
-        .eq("user_id", currentJob.user_id)
-        .single();
-
-      const rawPhone = user?.phone ?? "";
+    if (currentJob?.user_id || currentJob?.customer_phone) {
+      // Prefer canonical customer_phone from job, fallback to users table
+      let rawPhone = currentJob?.customer_phone || "";
+      if (!rawPhone && currentJob?.user_id) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("phone")
+          .eq("user_id", currentJob.user_id)
+          .single();
+        rawPhone = user?.phone ?? "";
+      }
       customerPhone = rawPhone || null;
       const phoneCheck = validatePhone(rawPhone);
       console.log(`[ACCEPT] Customer phone check — raw="${rawPhone}" e164="${phoneCheck.e164}" valid=${phoneCheck.valid} reason=${phoneCheck.reason ?? "ok"}`);

@@ -75,6 +75,21 @@ serve(async (req) => {
     });
     console.log(`[CUSTOMER-SMS] confirmation_sms_job_fetched — vehicle_make=${job.vehicle_make ?? "null"} vehicle_model=${job.vehicle_model ?? "null"} vehicle_year=${job.vehicle_year ?? "null"} pickup_location=${job.pickup_location ?? "null"} incident_type_id=${job.incident_type_id ?? "null"}`);
 
+    // Resolve phone: prefer job.customer_phone, then request param, then users table fallback
+    let phone = job.customer_phone || reqPhone || null;
+    if (!phone && job.user_id) {
+      const { data: user } = await supabase.from("users").select("phone").eq("user_id", job.user_id).single();
+      phone = user?.phone || null;
+    }
+    if (!phone) {
+      return new Response(JSON.stringify({
+        success: false,
+        error_code: "missing_phone",
+        error: "No customer phone available on job or user record",
+        context: { jobId },
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Phone validation — normalize and block invalid numbers before reaching Twilio
     const phoneCheck = validatePhone(phone);
     if (!phoneCheck.valid) {

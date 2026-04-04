@@ -273,6 +273,10 @@ const DispatchControlPanel = () => {
                       <dd>{[selectedJob.vehicle_year, selectedJob.vehicle_make, selectedJob.vehicle_model].filter(Boolean).join(" ") || "—"}</dd>
                     </div>
                     <div>
+                      <dt className="text-muted-foreground text-xs">Customer Phone</dt>
+                      <dd>{(selectedJob as any).customer_phone ?? "—"}</dd>
+                    </div>
+                    <div>
                       <dt className="text-muted-foreground text-xs">Pickup</dt>
                       <dd>{selectedJob.pickup_location ?? "—"}</dd>
                     </div>

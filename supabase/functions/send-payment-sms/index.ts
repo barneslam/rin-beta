@@ -44,18 +44,16 @@ serve(async (req) => {
       }, 400);
     }
 
-    if (!job.user_id) {
-      return jsonResp({ success: false, error: "No user linked to this job" }, 400);
+    // Resolve phone: prefer job.customer_phone, fallback to users table
+    let rawPhone = job.customer_phone || "";
+    if (!rawPhone && job.user_id) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("user_id", job.user_id)
+        .single();
+      rawPhone = user?.phone ?? "";
     }
-
-    // Fetch customer phone
-    const { data: user } = await supabase
-      .from("users")
-      .select("phone")
-      .eq("user_id", job.user_id)
-      .single();
-
-    const rawPhone = user?.phone ?? "";
 
     // ------------------------------------------------------------------
     // Phone validation — hard block before any SMS attempt

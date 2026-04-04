@@ -145,6 +145,7 @@ serve(async (req) => {
         required_truck_type_id: requiredTruckTypeId || null,
         required_equipment: requiredEquipment || [],
         location_type: locationType || "roadside",
+        customer_phone: phone || null,
         job_status: "pending_customer_confirmation",
       })
       .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location")
