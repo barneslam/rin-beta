@@ -26,13 +26,13 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { phone, jobId } = await req.json();
+    const { phone: reqPhone, jobId } = await req.json();
 
-    if (!phone || !jobId) {
+    if (!jobId) {
       return new Response(JSON.stringify({
         success: false,
         error_code: "missing_params",
-        error: "Missing phone or jobId",
+        error: "Missing jobId",
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
