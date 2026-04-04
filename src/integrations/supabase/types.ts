@@ -351,6 +351,7 @@ export type Database = {
           cancelled_reason: string | null
           confirmation_channel: string | null
           created_at: string
+          customer_phone: string | null
           customer_update_message: string | null
           dispatch_attempt_count: number
           dispatch_priority_score: number | null
@@ -393,6 +394,7 @@ export type Database = {
           cancelled_reason?: string | null
           confirmation_channel?: string | null
           created_at?: string
+          customer_phone?: string | null
           customer_update_message?: string | null
           dispatch_attempt_count?: number
           dispatch_priority_score?: number | null
@@ -435,6 +437,7 @@ export type Database = {
           cancelled_reason?: string | null
           confirmation_channel?: string | null
           created_at?: string
+          customer_phone?: string | null
           customer_update_message?: string | null
           dispatch_attempt_count?: number
           dispatch_priority_score?: number | null
