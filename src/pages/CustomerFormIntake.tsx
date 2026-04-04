@@ -86,11 +86,11 @@ export default function CustomerFormIntake() {
   }
 
   function normalizePhone(phone: string): string {
-    const digits = phone.replace(/[\s\-()]/g, "");
-    // If user typed 10 digits without +1, assume North America
-    if (/^\d{10}$/.test(digits)) return `+1${digits}`;
-    if (/^1\d{10}$/.test(digits)) return `+${digits}`;
-    return digits.startsWith("+") ? digits : `+${digits}`;
+    // Strip spaces, dashes, parentheses, dots — mirrors server-side _shared/phone.ts
+    const cleaned = phone.replace(/[\s\-().]/g, "");
+    if (/^\d{10}$/.test(cleaned)) return `+1${cleaned}`;
+    if (/^1\d{10}$/.test(cleaned)) return `+${cleaned}`;
+    return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
