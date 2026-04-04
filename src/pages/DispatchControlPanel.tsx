@@ -66,14 +66,6 @@ const DispatchControlPanel = () => {
   const { data: decisionLogs } = useDecisionLogsForJob(selectedJobId);
   const { data: dispatchOffers } = useDispatchOffers(selectedJobId, DASHBOARD_POLL);
 
-  // Flow Supervisor
-  const supervisor = useFlowSupervisor(
-    selectedJob,
-    dispatchOffers,
-    jobEvents as any,
-    decisionLogs,
-  );
-
   // Action state
   const [matchingLoading, setMatchingLoading] = useState(false);
   const [dispatchLoading, setDispatchLoading] = useState(false);
