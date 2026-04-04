@@ -90,7 +90,7 @@ const DispatchControlPanel = () => {
     [jobs, selectedJobId]
   );
 
-  // --- Actions ---
+  const supervisor = useFlowSupervisor(selectedJob, dispatchOffers, jobEvents as any, decisionLogs);
   const handleMatchDrivers = async () => {
     if (!selectedJobId) return;
     setMatchingLoading(true);
