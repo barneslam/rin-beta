@@ -109,7 +109,7 @@ serve(async (req) => {
     // -----------------------------------------------------------------------
     const { data: currentJob } = await supabase
       .from("jobs")
-      .select("job_status, estimated_price, user_id, stripe_payment_intent_id, pickup_location, incident_type_id, vehicle_year, vehicle_make, vehicle_model")
+      .select("job_status, estimated_price, user_id, stripe_payment_intent_id, pickup_location, incident_type_id, vehicle_year, vehicle_make, vehicle_model, customer_phone")
       .eq("job_id", offer.job_id)
       .single();
 
