@@ -13,7 +13,8 @@ import { useJobEventsForJob } from "@/hooks/useJobEventsForJob";
 import { useDecisionLogsForJob } from "@/hooks/useDecisionLogsForJob";
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from "@/types/rin";
 import type { Job, JobStatus } from "@/types/rin";
-import { AlertTriangle, Truck, Play, ChevronRight, Clock, MapPin, Car } from "lucide-react";
+import { AlertTriangle, Truck, Play, ChevronRight, Clock, MapPin, Car, Shield } from "lucide-react";
+import { useFlowSupervisor, type StateHealth } from "@/hooks/useFlowSupervisor";
 import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { toast } from "@/hooks/use-toast";
 
