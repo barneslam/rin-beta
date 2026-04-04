@@ -51,7 +51,7 @@ serve(async (req) => {
     // STAGE 1: Fetch job row
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
-      .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location, incident_type_id, can_vehicle_roll")
+      .select("job_id, vehicle_make, vehicle_model, vehicle_year, pickup_location, incident_type_id, can_vehicle_roll, customer_phone, user_id")
       .eq("job_id", jobId)
       .single();
 
