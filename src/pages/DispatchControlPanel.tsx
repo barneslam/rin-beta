@@ -324,7 +324,43 @@ const DispatchControlPanel = () => {
                 </Button>
               </div>
 
-              {/* Dispatch Offers */}
+              {/* Flow Supervisor */}
+              {supervisor && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Flow Supervisor
+                      </CardTitle>
+                      <Badge className={`text-[10px] ${
+                        supervisor.stateHealth === "valid" ? "bg-success/20 text-success" :
+                        supervisor.stateHealth === "waiting" ? "bg-accent/30 text-accent-foreground" :
+                        supervisor.stateHealth === "warning" ? "bg-destructive/15 text-destructive" :
+                        supervisor.stateHealth === "stuck" ? "bg-destructive/30 text-destructive" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {supervisor.stateHealth.toUpperCase()}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                      <dt className="text-muted-foreground text-xs font-medium">Status</dt>
+                      <dd>{JOB_STATUS_LABELS[supervisor.currentStatus] ?? supervisor.currentStatus}</dd>
+                      <dt className="text-muted-foreground text-xs font-medium">Why</dt>
+                      <dd>{supervisor.why}</dd>
+                      <dt className="text-muted-foreground text-xs font-medium">Next Action</dt>
+                      <dd className="font-medium">{supervisor.nextValidAction}</dd>
+                      <dt className="text-muted-foreground text-xs font-medium">Recommendation</dt>
+                      <dd>{supervisor.recommendedOperatorAction}</dd>
+                    </dl>
+                    <Separator />
+                    <p className="text-xs text-muted-foreground">{supervisor.evidenceSummary}</p>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm">Dispatch Offers ({dispatchOffers?.length ?? 0})</CardTitle>
