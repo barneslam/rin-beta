@@ -59,6 +59,12 @@ serve(async (req) => {
     const phone = phoneCheck.valid ? phoneCheck.e164 : (normalizePhone(rawPhone) || rawPhone);
 
     if (!phoneCheck.valid) {
+      // Reject if the normalized form is not E.164-shaped — prevents garbage rows in users table
+      const looksLikeE164 = /^\+\d{7,15}$/.test(phone);
+      if (!looksLikeE164) {
+        console.error(`[INTAKE-JOB] Step 1 FAILED — phone invalid raw="${rawPhone}" normalized="${phone}" reason=${phoneCheck.reason} status=failed`);
+        return jsonResp({ success: false, error: `Invalid phone number: ${phoneCheck.reason}`, code: "invalid_phone" }, 400);
+      }
       console.warn(`[INTAKE-JOB] Step 1 — phone invalid (${phoneCheck.reason}) raw="${rawPhone}" stored_as="${phone}" — continuing`);
     } else {
       console.log(`[INTAKE-JOB] Step 1 — phone normalized raw="${rawPhone}" e164="${phone}"`);
@@ -133,6 +139,7 @@ serve(async (req) => {
       .from("jobs")
       .insert({
         user_id: userId,
+        customer_phone: phoneCheck.valid ? phoneCheck.e164 : null,
         incident_type_id: incidentTypeId || null,
         pickup_location: pickupLocation || null,
         gps_lat: gpsLat ?? null,
