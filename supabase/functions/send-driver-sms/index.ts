@@ -75,18 +75,25 @@ serve(async (req) => {
         error: "Job not found", context: { jobId, offerId },
       }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // State guard: only send if job is ready_for_dispatch
-    if (job.job_status !== "ready_for_dispatch") {
+    // State guard: allow sending from any active dispatch state.
+    // driver_offer_sent is the normal state for 2nd+ offers in a sequence.
+    const VALID_SEND_STATES = [
+      "ready_for_dispatch",
+      "driver_offer_sent",
+      "dispatch_recommendation_ready",
+      "no_driver_candidates",
+    ];
+    if (!VALID_SEND_STATES.includes(job.job_status)) {
       await supabase.from("job_events").insert({
         job_id: jobId,
         event_type: "driver_sms_blocked",
         event_category: "exception",
-        message: `Driver SMS blocked — job not ready_for_dispatch (current: ${job.job_status}) offer_id=${offerId}`,
+        message: `Driver SMS blocked — invalid job state: ${job.job_status} (valid: ${VALID_SEND_STATES.join("|")}) offer_id=${offerId}`,
       });
       return new Response(JSON.stringify({
         success: false, error_code: "invalid_job_state",
-        error: `SMS blocked — job must be ready_for_dispatch (current: ${job.job_status})`,
-        context: { jobId, offerId, current_status: job.job_status },
+        error: `SMS blocked — job status '${job.job_status}' is not a dispatchable state`,
+        context: { jobId, offerId, current_status: job.job_status, valid_states: VALID_SEND_STATES },
       }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -225,24 +232,28 @@ Reply YES to accept, NO to decline.`;
       }),
     ]);
 
-    // Advance job status to driver_offer_sent — only if still ready_for_dispatch
+    // Advance job status to driver_offer_sent — from any transitional dispatch state.
+    // If already driver_offer_sent (2nd+ offer), no-op (no redundant event written).
     const { data: currentJob } = await supabase
       .from("jobs")
       .select("job_status")
       .eq("job_id", jobId)
       .single();
 
-    if (currentJob?.job_status === "ready_for_dispatch") {
+    const TRANSITION_TO_OFFER_SENT = ["ready_for_dispatch", "dispatch_recommendation_ready", "no_driver_candidates"];
+    if (currentJob && TRANSITION_TO_OFFER_SENT.includes(currentJob.job_status)) {
       await supabase.from("jobs").update({ job_status: "driver_offer_sent" }).eq("job_id", jobId);
       await supabase.from("job_events").insert({
         job_id: jobId,
         event_type: "job_status_updated",
         event_category: "dispatch",
-        message: `Status: ready_for_dispatch → driver_offer_sent (offer_id=${offerId})`,
+        message: `Status: ${currentJob.job_status} → driver_offer_sent (offer_id=${offerId})`,
       });
-      console.log(`[DRIVER-SMS] Status → driver_offer_sent job=${jobId} offer=${offerId}`);
+      console.log(`[DRIVER-SMS] Status: ${currentJob.job_status} → driver_offer_sent job=${jobId} offer=${offerId}`);
+    } else if (currentJob?.job_status === "driver_offer_sent") {
+      console.log(`[DRIVER-SMS] Status already driver_offer_sent — no transition needed job=${jobId}`);
     } else {
-      console.log(`[DRIVER-SMS] Status NOT updated — current=${currentJob?.job_status} (expected ready_for_dispatch) job=${jobId}`);
+      console.log(`[DRIVER-SMS] Status NOT updated — current=${currentJob?.job_status} job=${jobId}`);
     }
 
     console.log(`[DRIVER-SMS] Sent — driver=${driver.driver_name} to=${driverE164} job=${jobId} offer=${offerId} SID=${data.sid}`);
