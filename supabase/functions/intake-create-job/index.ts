@@ -30,22 +30,24 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const {
-      phone: rawPhone,
-      name,
-      vehicleMake,
-      vehicleModel,
-      vehicleYear,
-      vehicleCondition,
-      canVehicleRoll,
-      incidentTypeId,
-      pickupLocation,
-      gpsLat,
-      gpsLong,
-      locationType,
-      requiredTruckTypeId,
-      requiredEquipment,
-    } = await req.json();
+    const body = await req.json();
+
+    // Accept both camelCase and snake_case field names
+    const rawPhone = body.phone;
+    const name = body.name || body.customer_name;
+    const vehicleMake = body.vehicleMake || body.vehicle_make;
+    const vehicleModel = body.vehicleModel || body.vehicle_model;
+    const vehicleYear = body.vehicleYear || body.vehicle_year;
+    const vehicleCondition = body.vehicleCondition || body.vehicle_condition;
+    const canVehicleRoll = body.canVehicleRoll ?? body.can_vehicle_roll;
+    let incidentTypeId = body.incidentTypeId || body.incident_type_id;
+    const incidentType = body.incidentType || body.incident_type; // name-based lookup
+    const pickupLocation = body.pickupLocation || body.pickup_location;
+    const gpsLat = body.gpsLat ?? body.gps_lat;
+    const gpsLong = body.gpsLong ?? body.gps_long;
+    const locationType = body.locationType || body.location_type;
+    const requiredTruckTypeId = body.requiredTruckTypeId || body.required_truck_type_id;
+    const requiredEquipment = body.requiredEquipment || body.required_equipment;
 
     // -------------------------------------------------------------------------
     // Step 1a: Validate + normalize phone
@@ -133,13 +135,30 @@ serve(async (req) => {
     }
 
     // -------------------------------------------------------------------------
+    // Step 1c: Resolve incident type name → UUID if needed
+    // -------------------------------------------------------------------------
+    if (!incidentTypeId && incidentType) {
+      const { data: resolved } = await supabase
+        .from("incident_types")
+        .select("incident_type_id")
+        .ilike("incident_name", incidentType)
+        .limit(1)
+        .maybeSingle();
+      if (resolved) {
+        incidentTypeId = resolved.incident_type_id;
+        console.log(`[INTAKE-JOB] Step 1c — resolved incident_type "${incidentType}" → ${incidentTypeId}`);
+      } else {
+        console.warn(`[INTAKE-JOB] Step 1c — incident_type "${incidentType}" not found in incident_types table`);
+      }
+    }
+
+    // -------------------------------------------------------------------------
     // Step 2: Insert job — only runs after user is confirmed in DB
     // -------------------------------------------------------------------------
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
       .insert({
         user_id: userId,
-        customer_phone: phoneCheck.valid ? phoneCheck.e164 : null,
         incident_type_id: incidentTypeId || null,
         pickup_location: pickupLocation || null,
         gps_lat: gpsLat ?? null,
