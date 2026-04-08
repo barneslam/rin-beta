@@ -137,7 +137,25 @@ export default function ActiveJobScreen({ job, driverId, onUpdate }: Props) {
     );
   };
 
-  // Waiting for customer confirmation
+  // Waiting for customer to approve revised price
+  if (job.job_status === "customer_reapproval_pending") {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#f59e0b" />
+        <Text style={styles.waitingTitle}>Awaiting Customer Approval</Text>
+        <Text style={styles.waitingText}>
+          Your revised quote of ${Number(job.estimated_price || 0).toFixed(2)} has been sent to the customer.
+          {"\n\n"}Please wait for their approval before proceeding with service.
+        </Text>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Revised Amount</Text>
+          <Text style={styles.summaryPrice}>${Number(job.estimated_price || 0).toFixed(2)}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Waiting for customer confirmation of completion
   if (job.job_status === "pending_completion_approval") {
     return (
       <View style={[styles.container, styles.centered]}>

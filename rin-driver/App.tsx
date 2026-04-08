@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView, StyleSheet, ActivityIndicator, View, Text } from "react-native";
+import { SafeAreaView, StyleSheet, ActivityIndicator, View, Text, Platform } from "react-native";
 
 import { supabase } from "./src/lib/supabase";
 import { usePendingOffer, useActiveJob, useDriverProfile } from "./src/hooks/useDriverJob";
@@ -106,14 +106,17 @@ export default function App() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
-      {renderScreen()}
-    </SafeAreaView>
+    <View style={styles.outerContainer}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        {renderScreen()}
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerContainer: { flex: 1, backgroundColor: "#f8f9fa", minHeight: Platform.OS === "web" ? "100vh" as any : undefined },
   container: { flex: 1, backgroundColor: "#f8f9fa" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   completedIcon: { fontSize: 24, fontWeight: "800", color: "#16a34a", marginBottom: 16, backgroundColor: "#dcfce7", width: 80, height: 80, borderRadius: 40, textAlign: "center", textAlignVertical: "center", lineHeight: 80, overflow: "hidden" },

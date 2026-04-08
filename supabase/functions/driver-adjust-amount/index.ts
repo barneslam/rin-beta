@@ -71,10 +71,14 @@ serve(async (req) => {
 
     const oldAmount = job.estimated_price;
 
-    // Update estimated_price on the job
+    // Update price AND pause job — require customer approval before work continues
     const { error: updateErr } = await supabase
       .from("jobs")
-      .update({ estimated_price: parsedAmount })
+      .update({
+        estimated_price: parsedAmount,
+        job_status: "customer_reapproval_pending",
+        amendment_reason: `Driver adjusted price on scene: $${oldAmount?.toFixed(2) ?? "0"} → $${parsedAmount.toFixed(2)}`,
+      })
       .eq("job_id", jobId);
 
     if (updateErr) {
@@ -85,34 +89,53 @@ serve(async (req) => {
       job_id: jobId,
       event_type: "amount_adjusted",
       event_category: "pricing",
-      message: `Driver adjusted amount on scene: $${oldAmount?.toFixed(2) ?? "?"} → $${parsedAmount.toFixed(2)}`,
-      old_value: { estimated_price: oldAmount },
-      new_value: { estimated_price: parsedAmount },
+      message: `Driver adjusted amount on scene: $${oldAmount?.toFixed(2) ?? "?"} → $${parsedAmount.toFixed(2)} — job paused, awaiting customer approval`,
+      old_value: { estimated_price: oldAmount, job_status: job.job_status },
+      new_value: { estimated_price: parsedAmount, job_status: "customer_reapproval_pending" },
     });
 
-    await supabase.from("audit_logs").insert({
-      job_id: jobId,
-      action_type: `Driver adjusted amount: $${parsedAmount.toFixed(2)}`,
-      event_type: "price_adjusted",
-      event_source: "driver_sms",
-      old_value: { estimated_price: oldAmount },
-      new_value: { estimated_price: parsedAmount },
-    });
+    console.log(`[ADJUST-AMOUNT] Price updated + job paused — jobId=${jobId} old=$${oldAmount} new=$${parsedAmount} status=customer_reapproval_pending`);
 
-    console.log(`[ADJUST-AMOUNT] Price updated — jobId=${jobId} old=$${oldAmount} new=$${parsedAmount}`);
+    // Send customer approval request via send-amendment-sms
+    try {
+      const amendResp = await fetch(`${SUPABASE_URL}/functions/v1/send-amendment-sms`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jobId,
+          oldPrice: oldAmount || 0,
+          newPrice: parsedAmount,
+          reason: "Driver adjusted price on scene",
+        }),
+      });
+      const amendResult = await amendResp.json().catch(() => ({}));
+      console.log(`[ADJUST-AMOUNT] Amendment SMS result — status=${amendResp.status} sid=${amendResult.sid ?? "unknown"}`);
 
-    // Notify customer
-    const { data: customer } = await supabase
-      .from("users")
+      await supabase.from("job_events").insert({
+        job_id: jobId,
+        event_type: "amendment_sms_sent",
+        event_category: "communication",
+        message: `Customer approval SMS sent for revised amount $${parsedAmount.toFixed(2)} — SID: ${amendResult.sid ?? "unknown"}`,
+      });
+    } catch (smsErr) {
+      console.error(`[ADJUST-AMOUNT] Amendment SMS failed:`, smsErr);
+    }
+
+    // Notify driver that work is paused until customer approves
+    const { data: driver } = await supabase
+      .from("drivers")
       .select("phone")
-      .eq("user_id", job.user_id)
+      .eq("driver_id", driverId)
       .single();
 
-    if (customer?.phone) {
-      const phoneCheck = validatePhone(customer.phone);
+    if (driver?.phone) {
+      const phoneCheck = validatePhone(driver.phone);
       if (phoneCheck.valid) {
         const twilioAuth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-        const resp = await fetch(
+        await fetch(
           `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
           {
             method: "POST",
@@ -124,37 +147,16 @@ serve(async (req) => {
               To: phoneCheck.e164,
               From: TWILIO_PHONE_NUMBER,
               Body:
-                `RIN: Your driver has updated the service amount.\n\n` +
-                `New amount: $${parsedAmount.toFixed(2)}\n\n` +
-                `This amount will be charged upon completion. Contact dispatch if you have questions.`,
+                `RIN: Your revised quote of $${parsedAmount.toFixed(2)} has been sent to the customer for approval.\n\n` +
+                `Please wait for confirmation before proceeding with service. You will be notified when the customer responds.`,
             }),
           }
         );
-
-        const smsData = await resp.json();
-        if (resp.ok) {
-          console.log(`[ADJUST-AMOUNT] Customer notified — to=${phoneCheck.e164} sid=${smsData.sid}`);
-          await supabase.from("job_events").insert({
-            job_id: jobId,
-            event_type: "customer_update",
-            event_category: "customer_update",
-            message: `Your driver has updated the service amount to $${parsedAmount.toFixed(2)}. This will be charged upon completion.`,
-          });
-        } else {
-          console.error(`[ADJUST-AMOUNT] Customer SMS failed — status=${resp.status}`);
-          await supabase.from("job_events").insert({
-            job_id: jobId,
-            event_type: "adjust_amount_sms_failed",
-            event_category: "communication",
-            message: `Customer notification SMS failed: ${JSON.stringify(smsData)}`,
-          });
-        }
-      } else {
-        console.warn(`[ADJUST-AMOUNT] Customer phone invalid (${phoneCheck.reason}) — skipping SMS`);
+        console.log(`[ADJUST-AMOUNT] Driver notified — waiting for customer approval`);
       }
     }
 
-    return jsonResp({ success: true, new_amount: parsedAmount });
+    return jsonResp({ success: true, new_amount: parsedAmount, awaiting_approval: true });
   } catch (error: unknown) {
     console.error("[ADJUST-AMOUNT] Unhandled error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";

@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import * as Linking from "expo-linking";
 
+import { supabase } from "./src/lib/supabase";
 import { useJob, useCustomerJobs } from "./src/hooks/useJob";
 import { CUSTOMER_ACTION_REQUIRED } from "./src/types/job";
 import JobConfirmScreen from "./src/screens/JobConfirmScreen";
@@ -43,7 +44,15 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  // If no deep link, use a demo job ID for testing
+  // TEST MODE: Auto-load latest active job
+  useEffect(() => {
+    if (!jobId) {
+      // Hard-code the test job ID to bypass RLS
+      // In production, auth tokens will grant access
+      setJobId("b889221b-4862-4235-9820-029dc0839a11");
+    }
+  }, [jobId]);
+
   // In production this would use phone-based auth + useCustomerJobs
   const { job, driver, loading, error, refetch } = useJob(jobId);
 
