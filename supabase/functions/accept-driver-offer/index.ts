@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
@@ -285,7 +286,7 @@ serve(async (req) => {
         // NEW flow: price already confirmed, driver is on the way
         const price = Number(currentJob.estimated_price);
         const driverLine = driverCompany ? `${driverName} (${driverCompany})` : driverName;
-        const trackLink = `https://rin-beta.lovable.app/track/${offer.job_id}`;
+        const trackLink = `${APP_BASE_URL}/track/${offer.job_id}`;
         const smsBody =
           `RIN: Great news! Your driver ${driverLine} has been dispatched and is on the way.\n\n` +
           `Confirmed price: $${price.toFixed(2)}\n` +
@@ -330,7 +331,7 @@ serve(async (req) => {
           await supabase.from("job_events").insert({ job_id: offer.job_id, event_type: "pricing_missing_warning", event_category: "exception", message: `Driver ${driverName} accepted but estimated_price is missing. Payment SMS withheld.`, new_value: { exception_code: "pricing_missing" } });
         } else {
           const price = Number(currentJob.estimated_price);
-          const payLink = `https://rin-beta.lovable.app/pay/${offer.job_id}`;
+          const payLink = `${APP_BASE_URL}/pay/${offer.job_id}`;
           const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
           try {

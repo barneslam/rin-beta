@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
@@ -129,7 +130,7 @@ serve(async (req) => {
 
     const pickupLocation = job.pickup_location || "Not provided";
 
-    const confirmLink = `https://rin-beta.lovable.app/confirm/${jobId}`;
+    const confirmLink = `${APP_BASE_URL}/confirm/${jobId}`;
     const rollStatus = job.can_vehicle_roll === true ? "Yes" : job.can_vehicle_roll === false ? "No" : "Not answered";
 
     const smsBody =

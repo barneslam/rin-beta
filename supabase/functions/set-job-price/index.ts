@@ -5,6 +5,7 @@
  * Response:     { success, sid }
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
@@ -102,7 +103,7 @@ serve(async (req) => {
     });
 
     // Send price approval SMS to customer
-    const payLink = `https://rin-beta.lovable.app/pay/${jobId}`;
+    const payLink = `${APP_BASE_URL}/pay/${jobId}`;
     const smsBody =
       `RIN: Your estimated cost is $${parsedPrice.toFixed(2)}.\n\n` +
       `Reply APPROVE to authorize this amount, or visit:\n${payLink}\n\n` +

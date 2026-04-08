@@ -16,6 +16,7 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
@@ -144,7 +145,7 @@ serve(async (req) => {
     // ── 5. Build SMS body ────────────────────────────────────────────────────
     const vehicle  = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Not specified";
     const payout   = job.estimated_price ? `$${Number(job.estimated_price).toFixed(2)}` : "TBD";
-    const offerLink = `https://rin-beta.lovable.app/driver/offer/${offer_id}?token=${offer.token ?? ""}`;
+    const offerLink = `${APP_BASE_URL}/driver/offer/${offer_id}?token=${offer.token ?? ""}`;
 
     const smsBody =
       `RIN DISPATCH\n` +

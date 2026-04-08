@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone, validatePhone } from "../_shared/phone.ts";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
+// Lovable gateway removed — using direct Twilio API
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -231,7 +232,7 @@ serve(async (req) => {
       try {
         await sendCustomerSms(
           payload.caller_phone,
-          `RIN: Help is on the way! Track your driver here: https://rin-beta.lovable.app/track/${jobId}`
+          `RIN: Help is on the way! Track your driver here: ${APP_BASE_URL}/track/${jobId}`
         );
       } catch (e) {
         console.error("Customer SMS failed:", e);
@@ -513,8 +514,8 @@ async function runServerDispatch(
 }
 
 async function sendCustomerSms(to: string, body: string) {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+  const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured");
   const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
   if (!TWILIO_API_KEY) throw new Error("TWILIO_API_KEY not configured");
   const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
@@ -523,7 +524,7 @@ async function sendCustomerSms(to: string, body: string) {
   const resp = await fetch(`${GATEWAY_URL}/Messages.json`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
       "X-Connection-Api-Key": TWILIO_API_KEY,
       "Content-Type": "application/x-www-form-urlencoded",
     },

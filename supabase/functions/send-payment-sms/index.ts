@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validatePhone } from "../_shared/phone.ts";
 
@@ -106,7 +107,7 @@ serve(async (req) => {
     // ------------------------------------------------------------------
     // Send SMS
     // ------------------------------------------------------------------
-    const payLink = `https://rin-beta.lovable.app/pay/${job.job_id}`;
+    const payLink = `${APP_BASE_URL}/pay/${job.job_id}`;
     const body = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);

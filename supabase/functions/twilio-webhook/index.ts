@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Separate keyword sets
@@ -120,7 +121,7 @@ serve(async (req) => {
 
     log.final_response_branch = "unregistered";
     console.log("[WEBHOOK]", JSON.stringify(log));
-    return twimlResponse("This number is not registered with RIN. Visit rin-beta.lovable.app to get help.");
+    return twimlResponse("This number is not registered with RIN. Visit rin.app to get help.");
   } catch (error) {
     console.error("[WEBHOOK] Unhandled error:", error);
     return twimlResponse("Something went wrong. Please try again or use the link in your original message.");
@@ -412,7 +413,7 @@ async function handleDriverReply(
   }
 
   if (validOffers.length > 1) {
-    const link = `https://rin-beta.lovable.app/driver/offer/${validOffers[0].offer_id}?token=${validOffers[0].token}`;
+    const link = `${APP_BASE_URL}/driver/offer/${validOffers[0].offer_id}?token=${validOffers[0].token}`;
     return twimlResponse(`You have multiple pending offers. Please use the link to respond: ${link}`);
   }
 
@@ -501,7 +502,7 @@ async function handleDriverReply(
   }
 
   // Unrecognized reply
-  const link = `https://rin-beta.lovable.app/driver/offer/${offer.offer_id}?token=${offer.token}`;
+  const link = `${APP_BASE_URL}/driver/offer/${offer.offer_id}?token=${offer.token}`;
   console.log(`[WEBHOOK] Unrecognized driver reply: "${body}"`);
   return twimlResponse(`Reply YES to accept or NO to decline. Once en route, reply ARRIVED when on scene, DONE when complete. Or use: ${link}`);
 }
@@ -608,7 +609,7 @@ async function handleCustomerReply(
   if (CUSTOMER_CONFIRM_KEYWORDS.has(body)) {
     if (!confirmJob && priceJob) {
       // Customer replied YES to the price SMS — route to APPROVE logic
-      const payLink = `https://rin-beta.lovable.app/pay/${priceJob.job_id}`;
+      const payLink = `${APP_BASE_URL}/pay/${priceJob.job_id}`;
       const priceStr = priceJob.estimated_price ? `$${Number(priceJob.estimated_price).toFixed(2)}` : "the estimated amount";
       await supabase.from("jobs").update({
         job_status: "payment_authorization_required",
@@ -655,7 +656,7 @@ async function handleCustomerReply(
       return twimlResponse("You have no pending price to approve.");
     }
 
-    const payLink = `https://rin-beta.lovable.app/pay/${priceJob.job_id}`;
+    const payLink = `${APP_BASE_URL}/pay/${priceJob.job_id}`;
     const priceStr = priceJob.estimated_price ? `$${Number(priceJob.estimated_price).toFixed(2)}` : "the estimated amount";
 
     await supabase.from("jobs").update({
@@ -707,7 +708,7 @@ async function handleCustomerReply(
     return twimlResponse(`Reply APPROVE to authorize the estimated price of $${Number(priceJob.estimated_price).toFixed(2)}, or CANCEL to cancel.`);
   }
 
-  return twimlResponse("Thank you for reaching out to RIN. Visit rin-beta.lovable.app for help.");
+  return twimlResponse("Thank you for reaching out to RIN. Visit rin.app for help.");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { APP_BASE_URL } from "../_shared/config.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const MAX_RETRIES = 2;
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/twilio";
+// Lovable gateway removed — using direct Twilio API
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -332,18 +333,18 @@ async function finalizeIntake(supabase: any, callSid: string, _functionUrl: stri
 async function sendFallbackSms(phone: string, callSid: string, session: any) {
   if (!phone) return;
 
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
   const TWILIO_API_KEY = Deno.env.get("TWILIO_API_KEY");
   const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
-  if (!LOVABLE_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) return;
+  if (!ANTHROPIC_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) return;
 
-  const body = `RIN: We received a partial request from your call. To complete your roadside request, please use our chat: https://rin-beta.lovable.app/get-help/chat`;
+  const body = `RIN: We received a partial request from your call. To complete your roadside request, please use our chat: ${APP_BASE_URL}/get-help/chat`;
 
   try {
     await fetch(`${GATEWAY_URL}/Messages.json`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
         "X-Connection-Api-Key": TWILIO_API_KEY,
         "Content-Type": "application/x-www-form-urlencoded",
       },
