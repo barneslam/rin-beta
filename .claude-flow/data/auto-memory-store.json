@@ -1,0 +1,379 @@
+[
+  {
+    "id": "mem-MEMORY-memory-index",
+    "key": "memory-index",
+    "content": "- [RIN Beta — Project Overview](project_rin_beta.md) — Workflow, Supabase project ID, test data, correct flow steps 1–8\n- [RIN Beta — Edge Functions Reference](project_rin_edge_functions.md) — All deployed functions, versions, and purpose\n- [RIN Beta — Dev feedback](feedback_rin_dev.md) — Always use supabaseExternal, truck matching fix, single push policy, port 8080\n- [Security Audit — XSS, Auth, Input Validation](security_audit_xss_auth.md) — Critical vulns: Galoras XSS, dispatch API auth, inpu",
+    "summary": "Memory Index",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614049
+  },
+  {
+    "id": "mem-feedback_rin_dev----",
+    "key": "-",
+    "content": "name: RIN Beta — Dev feedback and approach\ndescription: Coding patterns, gotchas, and confirmed approaches for RIN beta development\ntype: feedback\n---\n\nAlways use `supabaseExternal` from `@/lib/supabaseExternal` — never `supabase` from `@/integrations/supabase/client`.\n**Why:** There is no `.env` file in the project so VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY are undefined. The internal client silently fails. `supabaseExternal` has hardcoded URL + anon key and works correctly.\n**How to ",
+    "summary": "---",
+    "namespace": "feedback_rin_dev",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/feedback_rin_dev.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta----",
+    "key": "-",
+    "content": "name: RIN Beta — Project Overview\ndescription: RIN roadside dispatch platform — architecture, workflow, and key decisions\ntype: project\n---\n\nProject is at `/Users/b.lamoutlook.com/Downloads/rin-beta` (Vite + React + TypeScript + Supabase).\nDev server runs on `http://localhost:8080` (not 5173).\nSupabase project ID: `zyoszbmahxnfcokuzkuv`\nGitHub Repo: `https://github.com/barneslam/rin-beta`\nAudit log: `CLAUDE_AUDIT_LOG.md` in project root\n\n**Why:** Building a dispatcher-facing roadside incident ma",
+    "summary": "---",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta-correct-workflow--fully-implem",
+    "key": "correct-workflow-fully-implemented-as-of-2026-03-2",
+    "content": "1. `/intake` — Dispatcher creates job → customer SMS with vehicle, location, issue, can_vehicle_roll, and `/confirm/:jobId` link\n2. Customer confirms via SMS (YES) or web link → `pending_pricing`\n3. `/validation` → `/pricing` — Dispatcher sets price → SMS to customer \"reply APPROVE\"\n4. Customer replies APPROVE → Stripe auth → `payment_authorization_required` → `ready_for_dispatch`\n5. `/matching` — Driver Matching (open for `ready_for_dispatch` OR `payment_authorized`)\n6. `/offer` — Driver offer ",
+    "summary": "Correct workflow (fully implemented as of 2026-03-29)",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta-amendment-flow--new--2026-03-2",
+    "key": "amendment-flow-new-2026-03-29-",
+    "content": "- Dispatcher clicks \"Amend Job\" in Step 7 → sets revised price + reason → `customer_reapproval_pending`\n- `send-amendment-sms` fires automatically → customer receives YES/NO SMS for revised charge\n- Dispatcher simulates response via \"Customer Approved / Declined\" buttons",
+    "summary": "Amendment flow (new, 2026-03-29)",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+    "key": "driver-cancel-at-scene-flow-new-2026-03-29-",
+    "content": "- Dispatcher clicks \"Driver Unable to Complete\" OR driver texts CANCEL\n- → `driver_cancelled_at_scene`, driver unassigned, no compensation, customer notified",
+    "summary": "Driver cancel at scene flow (new, 2026-03-29)",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta-key-db-facts",
+    "key": "key-db-facts",
+    "content": "- `job_status` enum includes: `pending_completion_approval`, `driver_cancelled_at_scene`\n- `completed_at TIMESTAMPTZ` column exists on jobs table (added 2026-03-29)\n- Payment bypass: sets `stripe_payment_intent_id = bypass_test_{timestamp}` — `complete-job` detects prefix and skips Stripe",
+    "summary": "Key DB facts",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_beta-test-data",
+    "key": "test-data",
+    "content": "- Customer: Peter, user_id=a5f0d336-8575-4117-b223-ebf5110b15ed, phone=+16472847417\n- Driver: Test Tow Driver (Mike Chen / FastTow Toronto), driver_id=0ecf6a1e-6109-494c-aff8-66451ea63f41, phone=+16474731338\n- Truck: Standard Flatbed (truck_type_id: 65e4cdc1-0b83-41ec-aa99-a28ae990eaa3), status available\n- Incident types Tow/Accident/Winch/Stuck Vehicle require Standard Flatbed; Battery/Flat Tire/Fuel/Lockout accept all trucks",
+    "summary": "Test data",
+    "namespace": "project_rin_beta",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_beta.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614050
+  },
+  {
+    "id": "mem-project_rin_edge_functions----",
+    "key": "-",
+    "content": "name: RIN Beta — Edge Functions Reference\ndescription: All deployed Supabase edge functions, their purpose, and current version as of 2026-04-03\ntype: project\n---\n\nAll functions deployed to project `zyoszbmahxnfcokuzkuv`. All use direct Twilio (btoa Basic auth), NOT the Lovable gateway.\n\n| Function | Version | Purpose |\n|---|---|---|\n| `intake-create-job` | v9 | Creates job + user, sends confirmation SMS to customer |\n| `send-customer-confirmation` | v18 | Sends job summary SMS with `/confirm/:j",
+    "summary": "---",
+    "namespace": "project_rin_edge_functions",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/project_rin_edge_functions.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614051
+  },
+  {
+    "id": "mem-security_audit_xss_auth----",
+    "key": "-",
+    "content": "name: Security Audit — XSS, Auth, Input Validation\ndescription: Critical vulnerabilities found: DOM-based XSS in Galoras, unauthenticated RIN dispatch API, no input validation\ntype: project\n---",
+    "summary": "---",
+    "namespace": "security_audit_xss_auth",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/security_audit_xss_auth.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614051
+  },
+  {
+    "id": "mem-security_audit_xss_auth-critical-vulnerabilities--2026",
+    "key": "critical-vulnerabilities-2026-03-30-",
+    "content": "### 1. DOM-based XSS in Galoras MVP App\n**File:** `Downloads/Galoras_MVP_Netlify_Demo_v3_Admin/assets/js/app.js:35`\n**Risk:** HIGH — localStorage data (name, photo, id) flows directly to innerHTML without HTML escaping\n**Fix:** Replace innerHTML with textContent, or sanitize with DOMPurify before DOM insertion\n**Why:** Malicious data in localStorage (via compromised source or MITM) executes arbitrary JavaScript\n\n### 2. Missing Authentication on RIN Dispatch Bridge\n**File:** `Downloads/bridge.js:",
+    "summary": "Critical Vulnerabilities (2026-03-30)",
+    "namespace": "security_audit_xss_auth",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/security_audit_xss_auth.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614051
+  },
+  {
+    "id": "mem-security_audit_xss_auth-action-items",
+    "key": "action-items",
+    "content": "1. ✅ Run comprehensive security audit (completed 2026-03-30)\n2. ⏳ Implement input validation on dispatch endpoints (priority: immediate)\n3. ⏳ Add authentication to dispatch API (priority: immediate)\n4. ⏳ Refactor DOM rendering to use safe methods (priority: high)\n5. ⏳ Replace execSync patterns with execFile or remove (priority: medium)",
+    "summary": "Action Items",
+    "namespace": "security_audit_xss_auth",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com/memory/security_audit_xss_auth.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614051
+  },
+  {
+    "id": "mem-MEMORY-galoras-dev---memory-index",
+    "key": "galoras-dev-memory-index",
+    "content": "- [Project Status](project_status.md) — Current sprint status, what's done, what's next\n- [Supabase Setup](supabase_setup.md) — Project IDs, URLs, keys, migration state\n- [User Profile](user_profile.md) — Barnes Lam coach profile and preferences\n- [Project Workflow](project_workflow.md) — Lovable disconnected; Claude Code + GitHub is the workflow\n- [Featured Coaches Tuning](featured_coaches_tuning.md) — Approved scale/margin values for Barnes, Conor, Mitesh on homepage\n- [Work Style](work_style.",
+    "summary": "Galoras Dev — Memory Index",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614052
+  },
+  {
+    "id": "mem-featured_coaches_tuning----",
+    "key": "-",
+    "content": "name: Featured Coaches Final Tuning\ndescription: Approved scale/margin values for the 3 featured coaches on the homepage\ntype: project\n---\n\nFinal approved state (commit c02e5b0):\n\n- **Barnes Lam** — `scale(0.88)`, `transformOrigin: top center`, `marginLeft: -96px`\n- **Conor McGowan Smyth** — `scale(1.0)`, reference coach, `marginLeft: -96px`\n- **Mitesh Kapadia** — `scale(1.05)`, `transformOrigin: top center`, `marginLeft: -170px` (closer to Conor)\n\nAll use: `h-[420px] object-cover object-top`\n\n*",
+    "summary": "---",
+    "namespace": "featured_coaches_tuning",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/featured_coaches_tuning.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614052
+  },
+  {
+    "id": "mem-project_status----",
+    "key": "-",
+    "content": "name: Project Status\ndescription: Validation Sprint and Phase 2 SOW completion status, what's done and what's next\ntype: project\n---",
+    "summary": "---",
+    "namespace": "project_status",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/project_status.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-project_status-sow-completion-as-of-2026-04-0",
+    "key": "sow-completion-as-of-2026-04-07",
+    "content": "| SOW | Area | Status |\n|-----|------|--------|\n| #1 | Structured Data Layer | ~85% |\n| #2 | Product Layer | ~40% |\n| #3 | Workflow & Admin | ~80% |\n| #4 | Public Layer | ~70% |\n| #5 | Agent-Ready Infrastructure | ~50% |\n| #6 | Payment & Commercial Loop | ~85% (blocked on Stripe key) |\n\n---\n\n### What's been built (cumulative)\n\n**SOW #1**\n- coaches table: all core structured fields, slug, lifecycle_status, tier, audience\n- 7 audit timestamps + reviewer fields added via migration (fc00428):\n  subm",
+    "summary": "SOW Completion as of 2026-04-07",
+    "namespace": "project_status",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/project_status.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-project_workflow----",
+    "key": "-",
+    "content": "name: Project Workflow\ndescription: How galoras-dev is built and deployed — Lovable disconnected, Claude Code is primary\ntype: project\n---\n\nLovable has been intentionally disconnected as of 2026-04-05. Do not suggest pasting files into Lovable or using Lovable's AI features.\n\n**Source of truth:** GitHub repo `barneslam/galoras-dev`\n**Primary tool:** Claude Code (this tool)\n**Deployment:** To be confirmed — Lovable was previously handling deployment to uat-galoras.site\n\n**Why:** Lovable kept reve",
+    "summary": "---",
+    "namespace": "project_workflow",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/project_workflow.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup----",
+    "key": "-",
+    "content": "name: Supabase Setup\ndescription: Supabase project IDs, URLs, keys, and migration state for Galoras\ntype: project\n---",
+    "summary": "---",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-active-project--uat-galoras",
+    "key": "active-project-uat-galoras",
+    "content": "- **Project ID:** `qbjuomsmnrclsjhdsjcz`\n- **URL:** `https://qbjuomsmnrclsjhdsjcz.supabase.co`\n- **Anon key:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFianVvbXNtbnJjbHNqaGRzamN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NzU3NzEsImV4cCI6MjA4NzU1MTc3MX0.oFw5D8DsnwbObCfZq6hn7TPLE5Wx9fS0-8WablLT2RA`\n- **Live site:** `uat-galoras.site` (Lovable hosted)\n- **config.toml:** points to `qbjuomsmnrclsjhdsjcz` ✓",
+    "summary": "Active Project: UAT-Galoras",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-other-projects",
+    "key": "other-projects",
+    "content": "- **Galoras MVP:** `skvoecotchtllclczlab` — empty, not in use\n- **Old/deleted project:** `dajlrvyqcyvgdzkzbjwk` — do not use, doesn't exist",
+    "summary": "Other Projects",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-tables-in-uat-galoras",
+    "key": "tables-in-uat-galoras",
+    "content": "bookings, coach_applications, coach_availability, coach_products, coaches, messages, session_bookings, user_roles",
+    "summary": "Tables in UAT-Galoras",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-migrations-applied--uat-",
+    "key": "migrations-applied-uat-",
+    "content": "- migration_004_reconcile_live_schema\n- migration_005_seed_mitesh\n- migration_006_seed_mitesh_products\n- messages_table (2026-04-04)\n- session_bookings_and_availability (2026-04-04)",
+    "summary": "Migrations Applied (UAT)",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-edge-functions-deployed",
+    "key": "edge-functions-deployed",
+    "content": "- send-message-notification ✓ (uses RESEND_API_KEY)",
+    "summary": "Edge Functions Deployed",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-supabase_setup-secrets-set",
+    "key": "secrets-set",
+    "content": "- RESEND_API_KEY: re_LHf6qS9S_7G9yZJbAjAGpHMVY5XJ82bEZ (rotate if compromised)\n- EMAIL_FROM: \"Galoras <onboarding@resend.dev>\" (temporary until galoras.com domain verified in Resend)\n\n**Why:** Old project was deleted. UAT-Galoras is the working production environment for the Validation Sprint.\n**How to apply:** Always target `qbjuomsmnrclsjhdsjcz` for CLI commands and MCP tools.",
+    "summary": "Secrets Set",
+    "namespace": "supabase_setup",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/supabase_setup.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614053
+  },
+  {
+    "id": "mem-user_profile----",
+    "key": "-",
+    "content": "name: User Profile\ndescription: Barnes Lam's role, preferences, and coach profile details\ntype: user\n---",
+    "summary": "---",
+    "namespace": "user_profile",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/user_profile.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614054
+  },
+  {
+    "id": "mem-user_profile-role",
+    "key": "role",
+    "content": "Owner/operator of Galoras platform. Founder at barneslam.co, thestrategypitch.com, axischamber.org.\nWorking with developer vendor (The Strategy Pitch) under a Validation Sprint SOW.",
+    "summary": "Role",
+    "namespace": "user_profile",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/user_profile.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614054
+  },
+  {
+    "id": "mem-user_profile-coach-profile--in-uat-galoras-",
+    "key": "coach-profile-in-uat-galoras-",
+    "content": "- **ID:** `1d2772d1-6ba1-4812-9d1e-18b5115eaec4`\n- **Slug:** `barnes-lam`\n- **Email:** `barnes@barneslam.co`\n- **LinkedIn:** `https://linkedin.com/in/barneslam`\n- **Website:** `https://barneslam.co`\n- **Photo:** `https://barneslam.co/assets/images/barnes-headshot.jpg`\n- **Booking:** `https://calendly.com/barnes-lam/galoras-initial-session-call`\n- **Tier:** elite",
+    "summary": "Coach Profile (in UAT-Galoras)",
+    "namespace": "user_profile",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/user_profile.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614054
+  },
+  {
+    "id": "mem-user_profile-preferences",
+    "key": "preferences",
+    "content": "- Prefers visual confirmation (screenshots) before assuming things work\n- Works across Lovable (UI), GitHub, Supabase simultaneously\n- Not deeply familiar with git internals — explain when doing rebases/stashes\n- **Model:** Prefers Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) for all sessions unless otherwise instructed",
+    "summary": "Preferences",
+    "namespace": "user_profile",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/user_profile.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614054
+  },
+  {
+    "id": "mem-work_style----",
+    "key": "-",
+    "content": "name: Work Style\ndescription: User's preferred working setup and context\ntype: user\n---\n\nLikes to work with the Coaching Exchange app (galoras-dev) open alongside other browser tabs. The memory directory path (`~/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/`) is a useful reference point he keeps in view.",
+    "summary": "---",
+    "namespace": "work_style",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/b.lamoutlook.com/.claude/projects/-Users-b-lamoutlook-com-galoras-dev/memory/work_style.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1775613614054
+  }
+]

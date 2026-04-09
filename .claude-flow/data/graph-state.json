@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "updatedAt": 1775656383403,
+  "nodeCount": 29,
+  "nodes": {
+    "mem-MEMORY-memory-index": {
+      "id": "mem-MEMORY-memory-index",
+      "category": "core",
+      "confidence": 0.53,
+      "accessCount": 1,
+      "createdAt": 1775613614049
+    },
+    "mem-feedback_rin_dev----": {
+      "id": "mem-feedback_rin_dev----",
+      "category": "feedback_rin_dev",
+      "confidence": 0.53,
+      "accessCount": 1,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta----": {
+      "id": "mem-project_rin_beta----",
+      "category": "project_rin_beta",
+      "confidence": 0.5900000000000001,
+      "accessCount": 3,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta-correct-workflow--fully-implem": {
+      "id": "mem-project_rin_beta-correct-workflow--fully-implem",
+      "category": "project_rin_beta",
+      "confidence": 0.56,
+      "accessCount": 2,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta-amendment-flow--new--2026-03-2": {
+      "id": "mem-project_rin_beta-amendment-flow--new--2026-03-2",
+      "category": "project_rin_beta",
+      "confidence": 0.56,
+      "accessCount": 2,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta-driver-cancel-at-scene-flow--n": {
+      "id": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+      "category": "project_rin_beta",
+      "confidence": 0.7700000000000002,
+      "accessCount": 7,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta-key-db-facts": {
+      "id": "mem-project_rin_beta-key-db-facts",
+      "category": "project_rin_beta",
+      "confidence": 0.9300000000000004,
+      "accessCount": 11,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_beta-test-data": {
+      "id": "mem-project_rin_beta-test-data",
+      "category": "project_rin_beta",
+      "confidence": 0.5900000000000001,
+      "accessCount": 3,
+      "createdAt": 1775613614050
+    },
+    "mem-project_rin_edge_functions----": {
+      "id": "mem-project_rin_edge_functions----",
+      "category": "project_rin_edge_functions",
+      "confidence": 0.56,
+      "accessCount": 2,
+      "createdAt": 1775613614051
+    },
+    "mem-security_audit_xss_auth----": {
+      "id": "mem-security_audit_xss_auth----",
+      "category": "security_audit_xss_auth",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614051
+    },
+    "mem-security_audit_xss_auth-critical-vulnerabilities--2026": {
+      "id": "mem-security_audit_xss_auth-critical-vulnerabilities--2026",
+      "category": "security_audit_xss_auth",
+      "confidence": 0.53,
+      "accessCount": 1,
+      "createdAt": 1775613614051
+    },
+    "mem-security_audit_xss_auth-action-items": {
+      "id": "mem-security_audit_xss_auth-action-items",
+      "category": "security_audit_xss_auth",
+      "confidence": 0.7100000000000002,
+      "accessCount": 5,
+      "createdAt": 1775613614051
+    },
+    "mem-MEMORY-galoras-dev---memory-index": {
+      "id": "mem-MEMORY-galoras-dev---memory-index",
+      "category": "core",
+      "confidence": 0.6100000000000001,
+      "accessCount": 3,
+      "createdAt": 1775613614052
+    },
+    "mem-featured_coaches_tuning----": {
+      "id": "mem-featured_coaches_tuning----",
+      "category": "featured_coaches_tuning",
+      "confidence": 0.5800000000000001,
+      "accessCount": 2,
+      "createdAt": 1775613614052
+    },
+    "mem-project_status----": {
+      "id": "mem-project_status----",
+      "category": "project_status",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614053
+    },
+    "mem-project_status-sow-completion-as-of-2026-04-0": {
+      "id": "mem-project_status-sow-completion-as-of-2026-04-0",
+      "category": "project_status",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614053
+    },
+    "mem-project_workflow----": {
+      "id": "mem-project_workflow----",
+      "category": "project_workflow",
+      "confidence": 0.5800000000000001,
+      "accessCount": 2,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup----": {
+      "id": "mem-supabase_setup----",
+      "category": "supabase_setup",
+      "confidence": 0.56,
+      "accessCount": 2,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-active-project--uat-galoras": {
+      "id": "mem-supabase_setup-active-project--uat-galoras",
+      "category": "supabase_setup",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-other-projects": {
+      "id": "mem-supabase_setup-other-projects",
+      "category": "supabase_setup",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-tables-in-uat-galoras": {
+      "id": "mem-supabase_setup-tables-in-uat-galoras",
+      "category": "supabase_setup",
+      "confidence": 0.7600000000000002,
+      "accessCount": 8,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-migrations-applied--uat-": {
+      "id": "mem-supabase_setup-migrations-applied--uat-",
+      "category": "supabase_setup",
+      "confidence": 0.8400000000000003,
+      "accessCount": 10,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-edge-functions-deployed": {
+      "id": "mem-supabase_setup-edge-functions-deployed",
+      "category": "supabase_setup",
+      "confidence": 0.7800000000000002,
+      "accessCount": 8,
+      "createdAt": 1775613614053
+    },
+    "mem-supabase_setup-secrets-set": {
+      "id": "mem-supabase_setup-secrets-set",
+      "category": "supabase_setup",
+      "confidence": 0.7600000000000002,
+      "accessCount": 6,
+      "createdAt": 1775613614053
+    },
+    "mem-user_profile----": {
+      "id": "mem-user_profile----",
+      "category": "user_profile",
+      "confidence": 0.5800000000000001,
+      "accessCount": 2,
+      "createdAt": 1775613614054
+    },
+    "mem-user_profile-role": {
+      "id": "mem-user_profile-role",
+      "category": "user_profile",
+      "confidence": 0.6100000000000001,
+      "accessCount": 3,
+      "createdAt": 1775613614054
+    },
+    "mem-user_profile-coach-profile--in-uat-galoras-": {
+      "id": "mem-user_profile-coach-profile--in-uat-galoras-",
+      "category": "user_profile",
+      "confidence": 0.5,
+      "accessCount": 0,
+      "createdAt": 1775613614054
+    },
+    "mem-user_profile-preferences": {
+      "id": "mem-user_profile-preferences",
+      "category": "user_profile",
+      "confidence": 0.6400000000000001,
+      "accessCount": 4,
+      "createdAt": 1775613614054
+    },
+    "mem-work_style----": {
+      "id": "mem-work_style----",
+      "category": "work_style",
+      "confidence": 0.6500000000000001,
+      "accessCount": 3,
+      "createdAt": 1775613614054
+    }
+  },
+  "edges": [
+    {
+      "sourceId": "mem-project_rin_beta----",
+      "targetId": "mem-project_rin_beta-correct-workflow--fully-implem",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-project_rin_beta-correct-workflow--fully-implem",
+      "targetId": "mem-project_rin_beta-amendment-flow--new--2026-03-2",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-project_rin_beta-amendment-flow--new--2026-03-2",
+      "targetId": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+      "targetId": "mem-project_rin_beta-key-db-facts",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-project_rin_beta-key-db-facts",
+      "targetId": "mem-project_rin_beta-test-data",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-security_audit_xss_auth----",
+      "targetId": "mem-security_audit_xss_auth-critical-vulnerabilities--2026",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-security_audit_xss_auth-critical-vulnerabilities--2026",
+      "targetId": "mem-security_audit_xss_auth-action-items",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-project_status----",
+      "targetId": "mem-project_status-sow-completion-as-of-2026-04-0",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup----",
+      "targetId": "mem-supabase_setup-active-project--uat-galoras",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-active-project--uat-galoras",
+      "targetId": "mem-supabase_setup-other-projects",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-other-projects",
+      "targetId": "mem-supabase_setup-tables-in-uat-galoras",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-tables-in-uat-galoras",
+      "targetId": "mem-supabase_setup-migrations-applied--uat-",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-migrations-applied--uat-",
+      "targetId": "mem-supabase_setup-edge-functions-deployed",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-edge-functions-deployed",
+      "targetId": "mem-supabase_setup-secrets-set",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-user_profile----",
+      "targetId": "mem-user_profile-role",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-user_profile-role",
+      "targetId": "mem-user_profile-coach-profile--in-uat-galoras-",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-user_profile-coach-profile--in-uat-galoras-",
+      "targetId": "mem-user_profile-preferences",
+      "type": "temporal",
+      "weight": 0.5
+    },
+    {
+      "sourceId": "mem-supabase_setup-tables-in-uat-galoras",
+      "targetId": "mem-supabase_setup-migrations-applied--uat-",
+      "type": "similar",
+      "weight": 0.4069767441860465
+    }
+  ],
+  "pageRanks": {
+    "mem-MEMORY-memory-index": 0.016299569312246458,
+    "mem-feedback_rin_dev----": 0.016299569312246458,
+    "mem-project_rin_beta----": 0.016299569312246458,
+    "mem-project_rin_beta-correct-workflow--fully-implem": 0.030154200800581385,
+    "mem-project_rin_beta-amendment-flow--new--2026-03-2": 0.04193064589171673,
+    "mem-project_rin_beta-driver-cancel-at-scene-flow--n": 0.05194064315320211,
+    "mem-project_rin_beta-key-db-facts": 0.060449144787204555,
+    "mem-project_rin_beta-test-data": 0.06768134584917004,
+    "mem-project_rin_edge_functions----": 0.016299569312246458,
+    "mem-security_audit_xss_auth----": 0.016299569312246458,
+    "mem-security_audit_xss_auth-critical-vulnerabilities--2026": 0.030154200800581385,
+    "mem-security_audit_xss_auth-action-items": 0.04193064589171673,
+    "mem-MEMORY-galoras-dev---memory-index": 0.016299569312246458,
+    "mem-featured_coaches_tuning----": 0.016299569312246458,
+    "mem-project_status----": 0.016299569312246458,
+    "mem-project_status-sow-completion-as-of-2026-04-0": 0.030154200800581385,
+    "mem-project_workflow----": 0.016299569312246458,
+    "mem-supabase_setup----": 0.016299569312246458,
+    "mem-supabase_setup-active-project--uat-galoras": 0.030154200800581385,
+    "mem-supabase_setup-other-projects": 0.04193064589171673,
+    "mem-supabase_setup-tables-in-uat-galoras": 0.05194064315320211,
+    "mem-supabase_setup-migrations-applied--uat-": 0.060449144787204555,
+    "mem-supabase_setup-edge-functions-deployed": 0.06768134584917004,
+    "mem-supabase_setup-secrets-set": 0.07382866995091318,
+    "mem-user_profile----": 0.016299569312246458,
+    "mem-user_profile-role": 0.030154200800581385,
+    "mem-user_profile-coach-profile--in-uat-galoras-": 0.04193064589171673,
+    "mem-user_profile-preferences": 0.05194064315320211,
+    "mem-work_style----": 0.016299569312246458
+  }
+}

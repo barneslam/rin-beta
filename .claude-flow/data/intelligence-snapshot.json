@@ -1,0 +1,282 @@
+[
+  {
+    "timestamp": 1775616018600,
+    "nodes": 29,
+    "edges": 18,
+    "pageRankSum": 1,
+    "confidences": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "accessCounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "topPatterns": [
+      {
+        "id": "mem-supabase_setup-secrets-set",
+        "summary": "Secrets Set",
+        "confidence": 0.5,
+        "pageRank": 0.07382866995091318,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-project_rin_beta-test-data",
+        "summary": "Test data",
+        "confidence": 0.5,
+        "pageRank": 0.06768134584917004,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-supabase_setup-edge-functions-deployed",
+        "summary": "Edge Functions Deployed",
+        "confidence": 0.5,
+        "pageRank": 0.06768134584917004,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-project_rin_beta-key-db-facts",
+        "summary": "Key DB facts",
+        "confidence": 0.5,
+        "pageRank": 0.060449144787204555,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-supabase_setup-migrations-applied--uat-",
+        "summary": "Migrations Applied (UAT)",
+        "confidence": 0.5,
+        "pageRank": 0.060449144787204555,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+        "summary": "Driver cancel at scene flow (new, 2026-03-29)",
+        "confidence": 0.5,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-supabase_setup-tables-in-uat-galoras",
+        "summary": "Tables in UAT-Galoras",
+        "confidence": 0.5,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-user_profile-preferences",
+        "summary": "Preferences",
+        "confidence": 0.5,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-project_rin_beta-amendment-flow--new--2026-03-2",
+        "summary": "Amendment flow (new, 2026-03-29)",
+        "confidence": 0.5,
+        "pageRank": 0.04193064589171673,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-security_audit_xss_auth-action-items",
+        "summary": "Action Items",
+        "confidence": 0.5,
+        "pageRank": 0.04193064589171673,
+        "accessCount": 0
+      }
+    ]
+  },
+  {
+    "timestamp": 1775656383411,
+    "nodes": 29,
+    "edges": 18,
+    "pageRankSum": 1,
+    "confidences": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.6500000000000001,
+      0.6500000000000001,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.6500000000000001,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.53,
+      0.6500000000000001,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.6500000000000001
+    ],
+    "accessCounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      3,
+      0,
+      0,
+      0,
+      0,
+      3
+    ],
+    "topPatterns": [
+      {
+        "id": "mem-supabase_setup-secrets-set",
+        "summary": "Secrets Set",
+        "confidence": 0.6500000000000001,
+        "pageRank": 0.07382866995091318,
+        "accessCount": 3
+      },
+      {
+        "id": "mem-project_rin_beta-key-db-facts",
+        "summary": "Key DB facts",
+        "confidence": 0.6500000000000001,
+        "pageRank": 0.060449144787204555,
+        "accessCount": 3
+      },
+      {
+        "id": "mem-project_rin_beta-driver-cancel-at-scene-flow--n",
+        "summary": "Driver cancel at scene flow (new, 2026-03-29)",
+        "confidence": 0.6500000000000001,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 3
+      },
+      {
+        "id": "mem-security_audit_xss_auth-action-items",
+        "summary": "Action Items",
+        "confidence": 0.6500000000000001,
+        "pageRank": 0.04193064589171673,
+        "accessCount": 3
+      },
+      {
+        "id": "mem-work_style----",
+        "summary": "---",
+        "confidence": 0.6500000000000001,
+        "pageRank": 0.016299569312246458,
+        "accessCount": 3
+      },
+      {
+        "id": "mem-supabase_setup-edge-functions-deployed",
+        "summary": "Edge Functions Deployed",
+        "confidence": 0.53,
+        "pageRank": 0.06768134584917004,
+        "accessCount": 1
+      },
+      {
+        "id": "mem-project_rin_beta-test-data",
+        "summary": "Test data",
+        "confidence": 0.5,
+        "pageRank": 0.06768134584917004,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-supabase_setup-migrations-applied--uat-",
+        "summary": "Migrations Applied (UAT)",
+        "confidence": 0.5,
+        "pageRank": 0.060449144787204555,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-supabase_setup-tables-in-uat-galoras",
+        "summary": "Tables in UAT-Galoras",
+        "confidence": 0.5,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 0
+      },
+      {
+        "id": "mem-user_profile-preferences",
+        "summary": "Preferences",
+        "confidence": 0.5,
+        "pageRank": 0.05194064315320211,
+        "accessCount": 0
+      }
+    ]
+  }
+]
