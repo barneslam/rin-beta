@@ -32,15 +32,34 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { jobId, price } = await req.json();
-    if (!jobId || price == null) {
-      return jsonResp({ success: false, error: "jobId and price are required" }, 400);
+    const { jobId, price, useAutoPrice } = await req.json();
+    if (!jobId) {
+      return jsonResp({ success: false, error: "jobId is required" }, 400);
     }
 
-    const parsedPrice = Number(price);
-    if (!parsedPrice || parsedPrice <= 0) {
-      return jsonResp({ success: false, error: "price must be a positive number" }, 400);
+    let parsedPrice: number;
+
+    if (useAutoPrice || price == null) {
+      // Auto-calculate from business rules
+      const { data: autoPrice } = await supabase.rpc("calculate_job_price", { p_job_id: jobId });
+      if (autoPrice?.final_price) {
+        parsedPrice = autoPrice.final_price;
+        console.log(`[SET-PRICE] Using auto-calculated price: $${parsedPrice} (breakdown: ${JSON.stringify(autoPrice)})`);
+      } else {
+        return jsonResp({ success: false, error: "Auto-pricing failed and no manual price provided" }, 400);
+      }
+    } else {
+      parsedPrice = Number(price);
+      if (!parsedPrice || parsedPrice <= 0) {
+        return jsonResp({ success: false, error: "price must be a positive number" }, 400);
+      }
     }
+
+    // Enforce minimum fee from business rules
+    const { data: minFeeRule } = await supabase.rpc("get_rule", { p_key: "pricing.minimum_job_fee" });
+    const minFeePercent = (minFeeRule?.percentage as number) ?? 50;
+    // min fee is applied at cancellation time, not here — but log it
+    console.log(`[SET-PRICE] Min fee policy: ${minFeePercent}% of total`);
 
     console.log(`[SET-PRICE] Starting — jobId=${jobId} price=${parsedPrice}`);
 

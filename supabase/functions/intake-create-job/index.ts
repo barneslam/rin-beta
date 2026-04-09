@@ -199,6 +199,22 @@ serve(async (req) => {
     });
 
     // -------------------------------------------------------------------------
+    // Step 2b: Auto-calculate suggested price from business rules
+    // -------------------------------------------------------------------------
+    let suggestedPrice: Record<string, unknown> | null = null;
+    try {
+      const { data: priceResult } = await supabase.rpc("calculate_job_price", { p_job_id: jobId });
+      if (priceResult) {
+        suggestedPrice = priceResult;
+        // Store suggested price on job (dispatcher can override)
+        await supabase.from("jobs").update({ estimated_price: priceResult.final_price }).eq("job_id", jobId);
+        console.log(`[INTAKE-JOB] Step 2b — auto_price=$${priceResult.final_price} breakdown=${JSON.stringify(priceResult)}`);
+      }
+    } catch (priceErr) {
+      console.warn(`[INTAKE-JOB] Step 2b — auto-pricing failed (non-fatal):`, priceErr);
+    }
+
+    // -------------------------------------------------------------------------
     // Step 3: Send customer summary SMS (non-fatal — job is already created)
     // -------------------------------------------------------------------------
     let smsSid: string | undefined;
@@ -258,7 +274,7 @@ serve(async (req) => {
 
     console.log(`[INTAKE-JOB] Complete — phone="${phone}" user_id="${userId}" job_id="${jobId}" sms=${smsStatus}${smsSid ? ` sid=${smsSid}` : ""} status=ok`);
 
-    return jsonResp({ success: true, user_id: userId, job_id: jobId, phone, sms_status: smsStatus });
+    return jsonResp({ success: true, user_id: userId, job_id: jobId, phone, sms_status: smsStatus, suggested_price: suggestedPrice });
   } catch (error: unknown) {
     console.error("[INTAKE-JOB] Unhandled error:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";

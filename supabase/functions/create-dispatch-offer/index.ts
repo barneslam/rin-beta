@@ -128,12 +128,16 @@ serve(async (req) => {
     // ------------------------------------------------------------------
     // Insert the offer
     // ------------------------------------------------------------------
+    // Read offer timeout from business rules (default 120s = 2 min)
+    const { data: timeoutRule } = await supabase.rpc("get_rule", { p_key: "dispatch.offer_timeout" });
+    const offerTimeoutMs = ((timeoutRule?.value as number) ?? 120) * 1000;
+
     const offerPayload = {
       job_id: jobId,
       driver_id: driverId,
       truck_id: truckId ?? null,
       offer_status: "pending" as const,
-      expires_at: expiresAt ?? new Date(Date.now() + 600 * 1000).toISOString(), // 10 minutes
+      expires_at: expiresAt ?? new Date(Date.now() + offerTimeoutMs).toISOString(),
     };
 
     const { data: offer, error: insertErr } = await supabase
