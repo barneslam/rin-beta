@@ -49,7 +49,7 @@ export default function App() {
     if (!jobId) {
       // Hard-code the test job ID to bypass RLS
       // In production, auth tokens will grant access
-      setJobId("b889221b-4862-4235-9820-029dc0839a11");
+      setJobId("982ed687-e7ed-42c0-bacb-a95c5b663dba");
     }
   }, [jobId]);
 
@@ -101,6 +101,15 @@ export default function App() {
       case "pending_customer_confirmation":
         return <JobConfirmScreen job={job} onConfirmed={refetch} />;
 
+      case "pending_pricing":
+        return (
+          <View style={[styles.container, styles.centered]}>
+            <ActivityIndicator size="large" color="#2563eb" style={{ marginBottom: 16 }} />
+            <Text style={styles.waitTitle}>Getting Your Quote</Text>
+            <Text style={styles.waitText}>Our dispatcher is preparing a price for your service. You'll be notified shortly.</Text>
+          </View>
+        );
+
       case "pending_customer_price_approval":
       case "customer_reapproval_pending":
         return <PriceApprovalScreen job={job} onApproved={refetch} />;
@@ -112,6 +121,15 @@ export default function App() {
 
       case "ready_for_dispatch":
       case "driver_offer_sent":
+      case "no_driver_candidates":
+        return (
+          <View style={[styles.container, styles.centered]}>
+            <ActivityIndicator size="large" color="#2563eb" style={{ marginBottom: 16 }} />
+            <Text style={styles.waitTitle}>Finding a Driver</Text>
+            <Text style={styles.waitText}>We're matching you with the nearest available driver. Hang tight!</Text>
+          </View>
+        );
+
       case "driver_assigned":
       case "driver_enroute":
       case "driver_arrived":
@@ -166,4 +184,6 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 16, fontSize: 15, color: "#666" },
   errorTitle: { fontSize: 22, fontWeight: "700", color: "#dc2626", marginBottom: 12 },
   errorText: { fontSize: 15, color: "#666", textAlign: "center", lineHeight: 22 },
+  waitTitle: { fontSize: 22, fontWeight: "700", color: "#1a1a2e", marginBottom: 8 },
+  waitText: { fontSize: 15, color: "#888", textAlign: "center", lineHeight: 22 },
 });

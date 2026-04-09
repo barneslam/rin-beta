@@ -102,6 +102,9 @@ export default function OfferScreen({ offer, job, onResponded }: Props) {
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.expiredTitle}>Offer Expired</Text>
         <Text style={styles.expiredText}>This dispatch offer has expired.</Text>
+        <TouchableOpacity style={styles.dismissButton} onPress={onResponded}>
+          <Text style={styles.dismissText}>Back to Home</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -167,5 +170,7 @@ const styles = StyleSheet.create({
   acceptButton: { flex: 2, backgroundColor: "#16a34a", borderRadius: 12, padding: 16, alignItems: "center" },
   acceptText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   expiredTitle: { fontSize: 22, fontWeight: "700", color: "#dc2626", marginBottom: 8 },
-  expiredText: { fontSize: 15, color: "#666" },
+  expiredText: { fontSize: 15, color: "#666", marginBottom: 24 },
+  dismissButton: { backgroundColor: "#2563eb", borderRadius: 12, padding: 16, paddingHorizontal: 48 },
+  dismissText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

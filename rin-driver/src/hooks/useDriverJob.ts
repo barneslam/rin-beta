@@ -43,7 +43,7 @@ export function usePendingOffer(driverId: string | null) {
     fetchPendingOffer();
   }, [fetchPendingOffer]);
 
-  // Real-time: watch for new offers
+  // Real-time: watch for new offers + polling fallback
   useEffect(() => {
     if (!driverId) return;
 
@@ -61,7 +61,10 @@ export function usePendingOffer(driverId: string | null) {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Polling fallback every 5 seconds
+    const poll = setInterval(fetchPendingOffer, 5000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [driverId, fetchPendingOffer]);
 
   return { offer, job, loading, refetch: fetchPendingOffer };
@@ -82,7 +85,9 @@ export function useActiveJob(driverId: string | null) {
       .from("jobs")
       .select("*")
       .eq("assigned_driver_id", driverId)
-      .not("job_status", "in", '("job_completed","cancelled_by_customer","driver_cancelled_at_scene")')
+      .neq("job_status", "job_completed")
+      .neq("job_status", "cancelled_by_customer")
+      .neq("job_status", "driver_cancelled_at_scene")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -95,7 +100,7 @@ export function useActiveJob(driverId: string | null) {
     fetchActiveJob();
   }, [fetchActiveJob]);
 
-  // Real-time subscription
+  // Real-time subscription + polling fallback
   useEffect(() => {
     if (!driverId) return;
 
@@ -108,7 +113,9 @@ export function useActiveJob(driverId: string | null) {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const poll = setInterval(fetchActiveJob, 5000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [driverId, fetchActiveJob]);
 
   return { job, loading, refetch: fetchActiveJob };

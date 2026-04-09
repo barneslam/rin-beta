@@ -49,10 +49,11 @@ export function useJob(jobId: string | null) {
     fetchJob();
   }, [fetchJob]);
 
-  // Real-time subscription
+  // Real-time subscription + polling fallback
   useEffect(() => {
     if (!jobId) return;
 
+    // Try real-time first
     const channel = supabase
       .channel(`job-${jobId}`)
       .on(
@@ -60,7 +61,6 @@ export function useJob(jobId: string | null) {
         { event: "UPDATE", schema: "public", table: "jobs", filter: `job_id=eq.${jobId}` },
         (payload) => {
           setJob(payload.new as Job);
-          // Re-fetch driver if assignment changed
           if (payload.new.assigned_driver_id !== payload.old?.assigned_driver_id) {
             fetchJob();
           }
@@ -68,8 +68,12 @@ export function useJob(jobId: string | null) {
       )
       .subscribe();
 
+    // Polling fallback: check every 5 seconds in case WebSocket fails
+    const poll = setInterval(fetchJob, 5000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(poll);
     };
   }, [jobId, fetchJob]);
 

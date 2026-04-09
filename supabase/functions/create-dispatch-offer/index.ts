@@ -133,7 +133,7 @@ serve(async (req) => {
       driver_id: driverId,
       truck_id: truckId ?? null,
       offer_status: "pending" as const,
-      expires_at: expiresAt ?? new Date(Date.now() + 150 * 1000).toISOString(),
+      expires_at: expiresAt ?? new Date(Date.now() + 600 * 1000).toISOString(), // 10 minutes
     };
 
     const { data: offer, error: insertErr } = await supabase
