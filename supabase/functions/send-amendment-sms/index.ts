@@ -104,7 +104,7 @@ serve(async (req) => {
     const newPriceStr = `$${Number(newPrice).toFixed(2)}`;
 
     const smsBody =
-      `RIN: Your driver has revised the service charge.\n\n` +
+      `WayLift: Your driver has revised the service charge.\n\n` +
       `Vehicle: ${vehicleSummary}\n` +
       `Original quote: ${oldPriceStr}\n` +
       `Revised quote: ${newPriceStr}\n` +

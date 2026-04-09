@@ -232,7 +232,7 @@ serve(async (req) => {
       try {
         await sendCustomerSms(
           payload.caller_phone,
-          `RIN: Help is on the way! Track your driver here: ${APP_BASE_URL}/track/${jobId}`
+          `WayLift: Help is on the way! Track your driver here: ${APP_BASE_URL}/track/${jobId}`
         );
       } catch (e) {
         console.error("Customer SMS failed:", e);

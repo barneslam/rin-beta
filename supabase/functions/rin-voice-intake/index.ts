@@ -338,7 +338,7 @@ async function sendFallbackSms(phone: string, callSid: string, session: any) {
   const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
   if (!ANTHROPIC_API_KEY || !TWILIO_API_KEY || !TWILIO_PHONE_NUMBER) return;
 
-  const body = `RIN: We received a partial request from your call. To complete your roadside request, please use our chat: ${APP_BASE_URL}/get-help/chat`;
+  const body = `WayLift: We received a partial request from your call. To complete your roadside request, please use our chat: ${APP_BASE_URL}/get-help/chat`;
 
   try {
     await fetch(`${GATEWAY_URL}/Messages.json`, {

@@ -177,7 +177,7 @@ serve(async (req) => {
             if (customerPhone) {
               await sendCustomerSms(
                 customerPhone,
-                `RIN: We're having difficulty finding an available driver near you right now. Our dispatcher will contact you shortly to arrange assistance.`
+                `WayLift: We're having difficulty finding an available driver near you right now. Our dispatcher will contact you shortly to arrange assistance.`
               );
             }
 
@@ -224,7 +224,7 @@ serve(async (req) => {
             if (customerPhone) {
               await sendCustomerSms(
                 customerPhone,
-                `RIN: We're still searching for an available driver near you (attempt ${nextAttempt} of ${MAX_DISPATCH_RETRIES}). We'll keep trying and notify you as soon as a driver is confirmed.`
+                `WayLift: We're still searching for an available driver near you (attempt ${nextAttempt} of ${MAX_DISPATCH_RETRIES}). We'll keep trying and notify you as soon as a driver is confirmed.`
               );
             }
 
@@ -297,7 +297,7 @@ serve(async (req) => {
             if (timedOut.user_id) {
               const { data: user } = await supabase.from("users").select("phone").eq("user_id", timedOut.user_id).single();
               if (user?.phone) {
-                await sendCustomerSms(user.phone, `RIN: Your roadside request has been cancelled due to inactivity. Please submit a new request if you still need assistance.`);
+                await sendCustomerSms(user.phone, `WayLift: Your roadside request has been cancelled due to inactivity. Please submit a new request if you still need assistance.`);
               }
             }
 

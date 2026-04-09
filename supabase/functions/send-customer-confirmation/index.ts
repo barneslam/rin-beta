@@ -130,17 +130,15 @@ serve(async (req) => {
 
     const pickupLocation = job.pickup_location || "Not provided";
 
-    const confirmLink = `${APP_BASE_URL}/confirm/${jobId}`;
     const rollStatus = job.can_vehicle_roll === true ? "Yes" : job.can_vehicle_roll === false ? "No" : "Not answered";
 
     const smsBody =
-      `RIN: We received your roadside request.\n\n` +
+      `WayLift: We received your roadside request.\n\n` +
       `Vehicle: ${vehicleSummary}\n` +
       `Location: ${pickupLocation}\n` +
       `Issue: ${incidentName}\n` +
       `Can vehicle roll? ${rollStatus}\n\n` +
-      `Please confirm your details (or correct them) using this link:\n${confirmLink}\n\n` +
-      `Or reply YES to confirm as-is, or CANCEL to cancel.`;
+      `Reply YES to confirm, or CANCEL to cancel.`;
 
     // CHECKPOINT 3: about to call Twilio
     await supabase.from("job_events").insert({

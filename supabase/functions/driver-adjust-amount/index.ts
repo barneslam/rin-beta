@@ -147,7 +147,7 @@ serve(async (req) => {
               To: phoneCheck.e164,
               From: TWILIO_PHONE_NUMBER,
               Body:
-                `RIN: Your revised quote of $${parsedAmount.toFixed(2)} has been sent to the customer for approval.\n\n` +
+                `WayLift: Your revised quote of $${parsedAmount.toFixed(2)} has been sent to the customer for approval.\n\n` +
                 `Please wait for confirmation before proceeding with service. You will be notified when the customer responds.`,
             }),
           }

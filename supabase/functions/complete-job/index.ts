@@ -174,7 +174,7 @@ serve(async (req) => {
       if (customer?.phone) {
         await sendSms(
           customer.phone,
-          `RIN: Your roadside service is complete.\n\nAmount to be charged: ${priceStr}\n\nReply CONFIRM to authorize the charge, or reply DISPUTE if you have a concern.`,
+          `WayLift: Your roadside service is complete.\n\nAmount to be charged: ${priceStr}\n\nReply CONFIRM to authorize the charge, or reply DISPUTE if you have a concern.`,
           "Customer confirmation request"
         );
       }
@@ -183,7 +183,7 @@ serve(async (req) => {
       if (driver?.phone) {
         await sendSms(
           driver.phone,
-          `RIN: Job marked complete. The customer has been asked to confirm the charge of ${priceStr}. You will be notified once confirmed.`,
+          `WayLift: Job marked complete. The customer has been asked to confirm the charge of ${priceStr}. You will be notified once confirmed.`,
           "Driver"
         );
       }
@@ -284,7 +284,7 @@ serve(async (req) => {
     if (customer?.phone) {
       await sendSms(
         customer.phone,
-        `RIN: Payment of ${priceStr} confirmed. Thank you for using RIN!`,
+        `WayLift: Payment of ${priceStr} confirmed. Thank you for using RIN!`,
         "Customer receipt"
       );
     }
@@ -292,7 +292,7 @@ serve(async (req) => {
     if (driver?.phone) {
       await sendSms(
         driver.phone,
-        `RIN: Customer confirmed. Payment of ${priceStr} is being processed. Thank you!`,
+        `WayLift: Customer confirmed. Payment of ${priceStr} is being processed. Thank you!`,
         "Driver receipt"
       );
     }

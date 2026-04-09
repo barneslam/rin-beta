@@ -49,17 +49,22 @@ import { logSystemEvent } from "../_shared/logSystemEvent.ts";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const MAX_EXCHANGES    = 5;   // max caller question-answer pairs before giving up
-const VOICE            = "Polly.Joanna";
+const VOICE            = "alice";
 const GATHER_TIMEOUT   = "8"; // seconds of silence before Twilio fires action
 const SPEECH_TIMEOUT   = "2"; // seconds of post-speech silence to end utterance
 
 // ── TwiML helpers ──────────────────────────────────────────────────────────────
 
 function twimlResp(body: string): Response {
-  return new Response(
-    `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`,
-    { headers: { "Content-Type": "text/xml" } },
-  );
+  const xml = `<Response>${body}</Response>`;
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(xml);
+  return new Response(encoded, {
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      "Content-Length": String(encoded.byteLength),
+    },
+  });
 }
 
 /** TwiML: say message and hang up. */
@@ -67,16 +72,21 @@ function hangup(message: string): string {
   return `<Say voice="${VOICE}">${escapeXml(message)}</Say><Hangup/>`;
 }
 
-/** TwiML: say message then open a speech gather. Falls back to hangup on silence. */
-function gather(message: string, actionUrl: string): string {
+/** TwiML: gather a single DTMF keypress. */
+function gatherInput(message: string, actionUrl: string): string {
   return (
+    `<Gather input="dtmf" numDigits="1" action="${actionUrl}" method="POST" timeout="10">` +
     `<Say voice="${VOICE}">${escapeXml(message)}</Say>` +
-    `<Gather input="speech" action="${actionUrl}" method="POST"` +
-    ` timeout="${GATHER_TIMEOUT}" speechTimeout="${SPEECH_TIMEOUT}" enhanced="true">` +
     `</Gather>` +
-    `<Say voice="${VOICE}">I didn't catch that. Please call back when you're ready. Goodbye.</Say>` +
+    `<Say voice="${VOICE}">We didn't receive a response. Please call back when you're ready. Goodbye.</Say>` +
     `<Hangup/>`
   );
+}
+
+/** TwiML: IVR menu with numbered options */
+function ivrMenu(prompt: string, options: string[], actionUrl: string): string {
+  const optionText = options.map((opt, i) => `Press ${i + 1} for ${opt}.`).join(' ');
+  return gatherInput(`${prompt} ${optionText}`, actionUrl);
 }
 
 function escapeXml(s: string): string {
@@ -197,23 +207,31 @@ serve(async (req) => {
 
     console.log(`[VOICE-INTAKE] Session ready — session_id=${session_id} candidate_id=${candidate_id} resumed=${resumed}`);
 
-    // User turn 1 will be the first gather callback
-    const gatherUrl = buildGatherUrl(SUPABASE_URL, session_id, candidate_id, 1);
+    // Step 1: Ask for incident type via IVR menu (DTMF — works on all accounts)
+    const menuUrl = `${SUPABASE_URL}/functions/v1/twilio-voice-intake?action=gather&session_id=${session_id}&candidate_id=${candidate_id}&turn=1&step=incident`;
 
+    // Read greeting from business rules
+    const { data: greetingRule } = await supabase.rpc("get_rule", { p_key: "llm.voice_greeting" });
     const greeting = resumed
-      ? "Welcome back to RIN roadside assistance. Let's continue where we left off. Please describe your location and the situation."
-      : "Thank you for calling RIN roadside assistance. To dispatch help quickly, I'll need a few details. Please tell me your current location and describe what happened with your vehicle.";
+      ? (greetingRule?.returning_caller as string) || "Welcome back to WayLift Roadside Assistance."
+      : (greetingRule?.new_caller as string) || "Hello! This is WayLift Roadside Assistance.";
 
-    return twimlResp(gather(greeting, gatherUrl));
+    return twimlResp(ivrMenu(
+      greeting,
+      ["a tow", "battery jumpstart", "flat tire", "lockout", "fuel delivery", "other"],
+      menuUrl
+    ));
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // GATHER CALLBACK — process utterance, extract, decide next step
+  // GATHER CALLBACK — IVR menu steps (DTMF) + speech fallback
   // ══════════════════════════════════════════════════════════════════════════════
 
   const session_id   = url.searchParams.get("session_id")   ?? "";
   const candidate_id = url.searchParams.get("candidate_id") ?? "";
   const userTurnNum  = parseInt(url.searchParams.get("turn") ?? "1", 10);
+  const step         = url.searchParams.get("step") ?? "incident";
+  const digits       = (formData.get("Digits") as string | null)?.trim() ?? "";
   const speechResult = (formData.get("SpeechResult") as string | null)?.trim() ?? "";
   const confidence   = parseFloat((formData.get("Confidence") as string | null) ?? "0");
 
@@ -222,8 +240,94 @@ serve(async (req) => {
     return twimlResp(hangup("We encountered a session error. Please call back."));
   }
 
-  const exchangeNum = Math.ceil(userTurnNum / 2); // 1, 2, 3... (user turns are odd: 1,3,5...)
-  console.log(`[VOICE-INTAKE] Gather — session_id=${session_id} turn=${userTurnNum} exchange=${exchangeNum} confidence=${confidence} speech_len=${speechResult.length}`);
+  console.log(`[VOICE-INTAKE] Gather — session=${session_id} step=${step} digits=${digits} speech=${speechResult.slice(0, 50)}`);
+
+  // ── IVR INCIDENT TYPE SELECTION ────────────────────────────────────────────
+  const INCIDENT_MAP: Record<string, { id: string; name: string }> = {
+    "1": { id: "1d8d7d3b-c58b-4b2b-944e-b1c00ca8969f", name: "Tow" },
+    "2": { id: "a4cdb184-d275-41a0-a2dc-cf17fe4ba5c9", name: "Battery Boost" },
+    "3": { id: "34c06174-258e-4bed-978f-cad26ee6c789", name: "Flat Tire" },
+    "4": { id: "a53fc74d-2c2c-40dd-ad2f-8141137dda51", name: "Lockout" },
+    "5": { id: "f2c9fc2d-d3a4-4aac-a607-9568de922a1d", name: "Fuel Delivery" },
+    "6": { id: "252293cb-7340-4b47-8cf6-b2a7813f4309", name: "Other" },
+  };
+
+  if (step === "incident") {
+    const incident = INCIDENT_MAP[digits];
+    if (!incident) {
+      const retryUrl = `${SUPABASE_URL}/functions/v1/twilio-voice-intake?action=gather&session_id=${session_id}&candidate_id=${candidate_id}&turn=${userTurnNum}&step=incident`;
+      return twimlResp(ivrMenu("Sorry, that wasn't a valid option.", ["a tow", "battery jumpstart", "flat tire", "lockout", "fuel delivery", "other"], retryUrl));
+    }
+
+    // Save incident type to candidate
+    await supabase.from("job_payload_candidates").update({ incident_type_id_candidate: incident.id }).eq("candidate_id", candidate_id);
+
+    await supabase.from("intake_turns").insert({
+      session_id, turn_number: userTurnNum, role: "user",
+      raw_input: `Selected: ${incident.name} (DTMF: ${digits})`,
+    });
+
+    console.log(`[VOICE-INTAKE] Incident selected: ${incident.name}`);
+
+    // Ask for location via speech (or DTMF for highway options)
+    const locationUrl = `${SUPABASE_URL}/functions/v1/twilio-voice-intake?action=gather&session_id=${session_id}&candidate_id=${candidate_id}&turn=${userTurnNum + 2}&step=highway`;
+    return twimlResp(ivrMenu(
+      `Got it, ${incident.name}. Are you on a major highway?`,
+      ["yes, on a highway", "no, on a city street", "in a parking lot or underground"],
+      locationUrl
+    ));
+  }
+
+  if (step === "highway") {
+    const locationTypes: Record<string, string> = {
+      "1": "highway",
+      "2": "city_street",
+      "3": "parking_lot",
+    };
+    const locationType = locationTypes[digits] || "unknown";
+
+    await supabase.from("job_payload_candidates").update({
+      pickup_location_candidate: `Caller on ${locationType.replace("_", " ")} — location pending from caller phone GPS`,
+    }).eq("candidate_id", candidate_id);
+
+    await supabase.from("intake_turns").insert({
+      session_id, turn_number: userTurnNum, role: "user",
+      raw_input: `Location type: ${locationType} (DTMF: ${digits})`,
+    });
+
+    // Ask if vehicle can roll
+    const rollUrl = `${SUPABASE_URL}/functions/v1/twilio-voice-intake?action=gather&session_id=${session_id}&candidate_id=${candidate_id}&turn=${userTurnNum + 2}&step=can_roll`;
+    return twimlResp(ivrMenu("Can your vehicle roll or be put in neutral?", ["yes it can roll", "no it cannot roll"], rollUrl));
+  }
+
+  if (step === "can_roll") {
+    const canRoll = digits === "1";
+    await supabase.from("job_payload_candidates").update({
+      can_vehicle_roll_candidate: canRoll,
+    }).eq("candidate_id", candidate_id);
+
+    // Finalize — we have incident type + location type + can_roll
+    console.log(`[VOICE-INTAKE] Finalizing — session=${session_id} candidate=${candidate_id}`);
+
+    const fin = await callFunction(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, "finalize-intake-to-job", {
+      session_id, candidate_id, channel_identifier: callerPhone,
+    });
+
+    if (fin.ok && fin.body.success) {
+      const jobId = fin.body.job_id as string;
+      console.log(`[VOICE-INTAKE] Job created — job_id=${jobId}`);
+      return twimlResp(hangup(
+        "Thank you! We have dispatched your request. A driver will be assigned shortly and you will receive an SMS with the details. Stay safe!"
+      ));
+    } else {
+      console.error(`[VOICE-INTAKE] Finalize failed:`, fin.body);
+      return twimlResp(hangup(
+        "Thank you for calling. We have your information and a dispatcher will contact you shortly by text message. Goodbye."
+      ));
+    }
+  }
+
+  const exchangeNum = Math.ceil(userTurnNum / 2);
 
   // ── Handle silence / no speech ───────────────────────────────────────────────
 

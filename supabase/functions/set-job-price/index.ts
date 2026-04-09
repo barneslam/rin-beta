@@ -122,10 +122,9 @@ serve(async (req) => {
     });
 
     // Send price approval SMS to customer
-    const payLink = `${APP_BASE_URL}/pay/${jobId}`;
     const smsBody =
-      `RIN: Your estimated cost is $${parsedPrice.toFixed(2)}.\n\n` +
-      `Reply APPROVE to authorize this amount, or visit:\n${payLink}\n\n` +
+      `WayLift: Your estimated cost is $${parsedPrice.toFixed(2)}.\n\n` +
+      `Reply APPROVE to authorize this amount.\n` +
       `Reply CANCEL to cancel your request.`;
 
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);

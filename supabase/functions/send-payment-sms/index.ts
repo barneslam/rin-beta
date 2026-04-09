@@ -108,7 +108,7 @@ serve(async (req) => {
     // Send SMS
     // ------------------------------------------------------------------
     const payLink = `${APP_BASE_URL}/pay/${job.job_id}`;
-    const body = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
+    const body = `WayLift: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
     const smsResp = await fetch(

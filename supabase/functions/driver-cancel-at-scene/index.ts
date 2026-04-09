@@ -143,7 +143,7 @@ serve(async (req) => {
                 To: phoneCheck.e164,
                 From: TWILIO_PHONE_NUMBER!,
                 Body:
-                  `RIN: We're sorry — your driver encountered an issue and was unable to complete the service.\n\n` +
+                  `WayLift: We're sorry — your driver encountered an issue and was unable to complete the service.\n\n` +
                   `A replacement driver is being arranged. Please stay with your vehicle.\n\n` +
                   `You will not be charged for this interruption.`,
               }),

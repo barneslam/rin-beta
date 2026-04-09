@@ -288,7 +288,7 @@ serve(async (req) => {
         const driverLine = driverCompany ? `${driverName} (${driverCompany})` : driverName;
         const trackLink = `${APP_BASE_URL}/track/${offer.job_id}`;
         const smsBody =
-          `RIN: Great news! Your driver ${driverLine} has been dispatched and is on the way.\n\n` +
+          `WayLift: Great news! Your driver ${driverLine} has been dispatched and is on the way.\n\n` +
           `Confirmed price: $${price.toFixed(2)}\n` +
           `Track your service: ${trackLink}\n\n` +
           `Reply CANCEL to cancel (if driver has not yet arrived).`;
@@ -332,7 +332,7 @@ serve(async (req) => {
         } else {
           const price = Number(currentJob.estimated_price);
           const payLink = `${APP_BASE_URL}/pay/${offer.job_id}`;
-          const smsBody = `RIN: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
+          const smsBody = `WayLift: Your driver is confirmed. Estimated charge: $${price.toFixed(2)}. Please authorize payment: ${payLink}`;
 
           try {
             const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
@@ -394,7 +394,7 @@ serve(async (req) => {
           const price = currentJob?.estimated_price ? `$${Number(currentJob.estimated_price).toFixed(2)}` : "TBD";
 
           const driverConfirmMsg =
-            `RIN: Job confirmed!\n\n` +
+            `WayLift: Job confirmed!\n\n` +
             `Service: ${incidentName}\n` +
             `Vehicle: ${vehicle}\n` +
             `Pickup: ${address}\n` +

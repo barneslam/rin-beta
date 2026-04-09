@@ -243,7 +243,7 @@ async function handleDriverReply(
               body: new URLSearchParams({
                 To: user.phone,
                 From: TWILIO_PHONE_NUMBER,
-                Body: `RIN: Your driver ${driver.driver_name} has arrived at your location and will begin service shortly.`,
+                Body: `WayLift: Your driver ${driver.driver_name} has arrived at your location and will begin service shortly.`,
               }),
             }
           ).then(async (resp) => {
