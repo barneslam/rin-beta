@@ -3,153 +3,285 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const V = "alice";
 
-function resp(body: string): Response {
+function xml(body: string): Response {
   return new Response(`<Response>${body}</Response>`, { headers: { "Content-Type": "text/xml" } });
 }
 
-function menu(msg: string): string {
-  return `<Gather input="dtmf" numDigits="1" timeout="10"><Say voice="${V}">${msg}</Say></Gather><Say voice="${V}">No response. Goodbye.</Say><Hangup/>`;
-}
-
-function say(msg: string, lang = "", voice = V): string {
-  return lang ? `<Say voice="${voice}" language="${lang}">${msg}</Say>` : `<Say voice="${voice}">${msg}</Say>`;
-}
-
-function menuLang(msg: string, lang: string, voice = V): string {
-  return `<Gather input="dtmf" numDigits="1" timeout="10"><Say voice="${voice}" language="${lang}">${msg}</Say></Gather><Say voice="${voice}" language="${lang}">Goodbye.</Say><Hangup/>`;
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
 serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   let formData: FormData;
   try { formData = await req.formData(); } catch {
-    return resp(`<Say voice="${V}">Error. Goodbye.</Say><Hangup/>`);
+    return xml(`<Say voice="${V}">Error. Goodbye.</Say><Hangup/>`);
   }
 
   const callSid = (formData.get("CallSid") as string) || "unknown";
   const from = (formData.get("From") as string) || "";
   const digits = (formData.get("Digits") as string) || "";
+  const speech = (formData.get("SpeechResult") as string) || "";
 
-  // Load session from DB
+  // Load or create session
   const { data: sess } = await supabase
     .from("voice_call_sessions")
     .select("*")
     .eq("call_sid", callSid)
     .maybeSingle();
 
-  const step = sess?.ivr_step ?? -1;
-  const lang = sess?.language_code || "en-US";
-  const isFr = lang === "fr-CA";
-  const isCn = lang === "yue-Hant-HK";
-
-  // New call — create session
-  if (!sess) {
-    await supabase.from("voice_call_sessions").insert({ call_sid: callSid, caller_phone: from, ivr_step: -1, language_code: "en-US" });
+  // Handle recording callback (Twilio sends recording URL here)
+  const url = new URL(req.url);
+  if (url.searchParams.get("step") === "recording") {
+    const recordingUrl = (formData.get("RecordingUrl") as string) || "";
+    const recordingSid = (formData.get("RecordingSid") as string) || "";
+    if (recordingUrl) {
+      console.log(`[VOICE] Recording saved: ${recordingUrl} SID: ${recordingSid}`);
+      // Save recording URL to session for audit
+      await supabase.from("voice_call_sessions")
+        .update({ recording_url: recordingUrl, recording_sid: recordingSid })
+        .eq("call_sid", callSid);
+      // Log to audit
+      await supabase.from("audit_logs").insert({
+        action_type: "voice_recording_saved",
+        event_type: "voice_intake",
+        event_source: "twilio",
+        new_value: { call_sid: callSid, recording_url: recordingUrl, recording_sid: recordingSid },
+      });
+    }
+    return xml(""); // empty TwiML — just acknowledge
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // STEP -1: Language selection
-  // ══════════════════════════════════════════════════════════════
-  if (step === -1 && !digits) {
-    return resp(
-      `<Gather input="dtmf" numDigits="1" timeout="10">` +
-      say("Bienvenue chez Way Lift. Pour le français, appuyez sur 1.", "fr-CA") +
-      say("For English, press 2.", "") +
-      say("廣東話，請按3。", "cmn-CN", "Polly.Zhiyu") +
+  if (!sess) {
+    await supabase.from("voice_call_sessions").insert({
+      call_sid: callSid, caller_phone: from, ivr_step: 0, language_code: "en-US"
+    });
+    // Audit: new voice session
+    await supabase.from("audit_logs").insert({
+      action_type: "voice_session_started",
+      event_type: "voice_intake",
+      event_source: "twilio",
+      new_value: { call_sid: callSid, caller_phone: from },
+    });
+  }
+
+  const step = sess?.ivr_step ?? 0;
+
+  // ═══════════════════════════════════════════════════════════
+  // STEP 0: Greeting — open-ended speech input
+  // Uses Twilio <Say> (fast) + speech recognition
+  // ═══════════════════════════════════════════════════════════
+  if (step === 0 && !speech && !digits) {
+    // Language selection: press 1 for English, 2 for French, 3 for Cantonese — or just start speaking English
+    return xml(
+      // Record the entire call for audit/liability
+      `<Record recordingStatusCallback="${SUPABASE_URL}/functions/v1/voice-test?step=recording" maxLength="300" playBeep="false" trim="trim-silence"/>` +
+      `<Gather input="speech dtmf" numDigits="1" timeout="12" speechTimeout="4" language="en-US">` +
+      `<Say voice="${V}">Hello! This is Way Lift Roadside Assistance. ` +
+      `Please tell me your name, your location, and what happened with your vehicle. ` +
+      `You may speak in your own language.</Say>` +
+      `<Say voice="${V}" language="fr-CA">Bienvenue chez Way Lift. Dites-nous votre nom, votre emplacement et ce qui s'est passé. Vous pouvez parler dans votre langue.</Say>` +
       `</Gather>` +
-      say("Goodbye.") + `<Hangup/>`
+      `<Say voice="${V}">I didn't hear anything. Goodbye.</Say><Hangup/>`
     );
   }
 
-  if (step === -1 && digits) {
-    const langMap: Record<string, string> = { "1": "fr-CA", "2": "en-US", "3": "yue-Hant-HK" };
-    const chosen = langMap[digits] || "en-US";
-    await supabase.from("voice_call_sessions").update({ ivr_step: 0, language_code: chosen }).eq("call_sid", callSid);
-
-    // Show incident menu in chosen language
-    if (chosen === "fr-CA") {
-      return resp(menuLang("Appuyez sur 1 pour remorquage. 2 pour survoltage. 3 pour pneu crevé. 4 pour déverrouillage. 5 pour essence. 6 pour autre.", "fr-CA"));
+  // Language switch: pressed 1 for French or 2 for Cantonese
+  if (step === 0 && digits && !speech) {
+    if (digits === "1") {
+      await supabase.from("voice_call_sessions").update({ language_code: "fr-CA" }).eq("call_sid", callSid);
+      return xml(
+        `<Gather input="speech" timeout="10" speechTimeout="4" language="fr-CA">` +
+        `<Say voice="${V}" language="fr-CA">Bienvenue chez Way Lift assistance routière. Veuillez me dire votre nom, votre emplacement, et ce qui s'est passé avec votre véhicule.</Say>` +
+        `</Gather>` +
+        `<Say voice="${V}" language="fr-CA">Aucune réponse. Au revoir.</Say><Hangup/>`
+      );
     }
-    if (chosen === "yue-Hant-HK") {
-      return resp(menuLang("按1拖車。按2搭電。按3爆胎。按4開鎖。按5送油。按6其他。", "cmn-CN", "Polly.Zhiyu"));
+    if (digits === "2") {
+      await supabase.from("voice_call_sessions").update({ language_code: "yue-Hant-HK" }).eq("call_sid", callSid);
+      return xml(
+        `<Gather input="speech" timeout="10" speechTimeout="4" language="yue-Hant-HK">` +
+        `<Say voice="${V}" language="zh-HK">歡迎致電 Way Lift 道路救援。請話畀我哋知你嘅名，你喺邊度，同埋你架車有咩問題。</Say>` +
+        `</Gather>` +
+        `<Say voice="${V}" language="zh-HK">冇收到回應。再見。</Say><Hangup/>`
+      );
     }
-    return resp(menu("Welcome to Way Lift. Press 1 for tow. 2 for battery. 3 for flat tire. 4 for lockout. 5 for fuel. 6 for other."));
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // STEP 0: Incident type selected
-  // ══════════════════════════════════════════════════════════════
-  if (step === 0 && digits) {
-    const incidents: Record<string, { id: string; en: string; fr: string; cn: string }> = {
-      "1": { id: "1d8d7d3b-c58b-4b2b-944e-b1c00ca8969f", en: "Tow", fr: "remorquage", cn: "拖車" },
-      "2": { id: "a4cdb184-d275-41a0-a2dc-cf17fe4ba5c9", en: "Battery Boost", fr: "survoltage", cn: "搭電" },
-      "3": { id: "34c06174-258e-4bed-978f-cad26ee6c789", en: "Flat Tire", fr: "pneu crevé", cn: "爆胎" },
-      "4": { id: "a53fc74d-2c2c-40dd-ad2f-8141137dda51", en: "Lockout", fr: "déverrouillage", cn: "開鎖" },
-      "5": { id: "f2c9fc2d-d3a4-4aac-a607-9568de922a1d", en: "Fuel Delivery", fr: "essence", cn: "送油" },
-      "6": { id: "252293cb-7340-4b47-8cf6-b2a7813f4309", en: "Other", fr: "autre", cn: "其他" },
-    };
-    const inc = incidents[digits];
-    if (!inc) return resp(menu("Invalid. Press 1 through 6."));
+  // ═══════════════════════════════════════════════════════════
+  // STEP 0 → caller spoke: extract with Claude Haiku
+  // ═══════════════════════════════════════════════════════════
+  if (step === 0 && speech) {
+    console.log(`[VOICE] Caller said: "${speech}"`);
 
-    await supabase.from("voice_call_sessions").update({ ivr_step: 1, incident_type_id: inc.id, incident_name: inc.en }).eq("call_sid", callSid);
+    await supabase.from("voice_call_sessions").update({
+      ivr_step: 1, incident_description: speech
+    }).eq("call_sid", callSid);
 
-    if (isFr) return resp(menuLang(`Compris, ${inc.fr}. Êtes-vous sur une autoroute? 1 pour autoroute. 2 pour rue. 3 pour stationnement.`, "fr-CA"));
-    if (isCn) return resp(menuLang(`收到，${inc.cn}。你喺邊度？按1高速公路。按2普通街道。按3停車場。`, "cmn-CN", "Polly.Zhiyu"));
-    return resp(menu(`Got it, ${inc.en}. Press 1 for highway. 2 for city street. 3 for parking lot.`));
+    if (!ANTHROPIC_KEY) {
+      return xml(`<Say voice="${V}">Thank you. A dispatcher will text you shortly. Goodbye.</Say><Hangup/>`);
+    }
+
+    // Extract structured data
+    try {
+      const llmResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          system: `Extract roadside assistance info from caller speech. The caller may speak English, French, or Cantonese. Return JSON only, no other text:
+{"name":null,"location":null,"incident":null,"vehicle_make":null,"vehicle_model":null,"vehicle_year":null,"can_roll":null,"language":"en|fr|zh"}
+incident must be one of: tow, battery, flat tire, lockout, fuel, mechanical, accident, other, or null.
+Detect the language spoken and set "language" accordingly.`,
+          messages: [{ role: "user", content: speech }],
+        }),
+      });
+
+      const data = await llmResp.json();
+      const text = data.content?.[0]?.text || "{}";
+      // Clean any markdown fencing
+      const cleanJson = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const ext = JSON.parse(cleanJson);
+      console.log(`[VOICE] Extracted: ${JSON.stringify(ext)}`);
+
+      const incMap: Record<string, string> = {
+        "tow": "1d8d7d3b-c58b-4b2b-944e-b1c00ca8969f",
+        "battery": "a4cdb184-d275-41a0-a2dc-cf17fe4ba5c9",
+        "flat tire": "34c06174-258e-4bed-978f-cad26ee6c789",
+        "lockout": "a53fc74d-2c2c-40dd-ad2f-8141137dda51",
+        "fuel": "f2c9fc2d-d3a4-4aac-a607-9568de922a1d",
+        "mechanical": "8e5dd7f8-28df-4f98-be40-5d8c05eaff41",
+        "accident": "2d677673-e400-423b-88a6-89632546ec46",
+        "other": "252293cb-7340-4b47-8cf6-b2a7813f4309",
+      };
+
+      const incidentId = ext.incident ? incMap[ext.incident.toLowerCase()] || null : null;
+      const hasLocation = !!ext.location;
+      const hasIncident = !!incidentId;
+
+      // Detect language from LLM and save
+      const detectedLang = ext.language === "fr" ? "fr-CA" : ext.language === "zh" ? "yue-Hant-HK" : sess?.language_code || "en-US";
+
+      // Save extracted data + detected language
+      await supabase.from("voice_call_sessions").update({
+        incident_type_id: incidentId,
+        location_text: ext.location,
+        vehicle_info: [ext.vehicle_year, ext.vehicle_make, ext.vehicle_model].filter(Boolean).join(" ") || null,
+        can_vehicle_roll: ext.can_roll,
+        language_code: detectedLang,
+      }).eq("call_sid", callSid);
+
+      // If we have location + incident → create job immediately
+      if (hasLocation && hasIncident) {
+        const jobResp = await fetch(`${SUPABASE_URL}/functions/v1/intake-create-job`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: ext.name, phone: from, incidentTypeId: incidentId,
+            pickupLocation: ext.location, vehicleMake: ext.vehicle_make,
+            vehicleModel: ext.vehicle_model, vehicleYear: ext.vehicle_year,
+            canVehicleRoll: ext.can_roll,
+          }),
+        });
+        const jobResult = await jobResp.json();
+        console.log(`[VOICE] Job: ${JSON.stringify(jobResult)}`);
+        await supabase.from("voice_call_sessions").update({ ivr_step: 99, completed_at: new Date().toISOString(), job_id: jobResult.job_id }).eq("call_sid", callSid);
+
+        const price = jobResult.suggested_price?.final_price;
+        const callerLang = detectedLang;
+
+        if (callerLang === "yue-Hant-HK") {
+          const priceMsg = price ? `預計費用大約 ${price.toFixed(0)} 蚊。` : "";
+          return xml(`<Say voice="${V}" language="zh-HK">多謝你！我已經收到你嘅資料。${priceMsg}我哋會盡快安排司機，並會發短信通知你。請注意安全！</Say><Hangup/>`);
+        }
+        if (callerLang === "fr-CA") {
+          const priceMsg = price ? ` Le coût estimé est d'environ ${price.toFixed(2)} dollars.` : "";
+          return xml(`<Say voice="${V}" language="fr-CA">Merci${ext.name ? ", " + esc(ext.name) : ""}! J'ai vos informations.${priceMsg} Un chauffeur sera assigné sous peu et vous recevrez un message texte. Soyez prudent!</Say><Hangup/>`);
+        }
+        // English
+        const priceMsg = price ? ` The estimated cost is approximately $${price.toFixed(2)}.` : "";
+        return xml(`<Say voice="${V}">Thank you${ext.name ? ", " + esc(ext.name) : ""}! I've got your details.${priceMsg} A driver will be assigned shortly and you'll receive a text message. Stay safe!</Say><Hangup/>`);
+      }
+
+      // Missing info → ask follow-up
+      let followUp = "Thank you. I just need a bit more information. ";
+      if (!hasLocation) followUp += "What is your exact location? Please give me a street address or intersection. ";
+      if (!hasIncident) followUp += "What is the problem with your vehicle? ";
+      if (!ext.vehicle_make) followUp += "What kind of vehicle do you have? ";
+
+      return xml(
+        `<Gather input="speech" timeout="10" speechTimeout="4" language="en-US">` +
+        `<Say voice="${V}">${esc(followUp)}</Say>` +
+        `</Gather>` +
+        `<Say voice="${V}">No response. A dispatcher will text you. Goodbye.</Say><Hangup/>`
+      );
+
+    } catch (err) {
+      console.error("[VOICE] Extraction error:", err);
+      return xml(`<Say voice="${V}">Thank you. A dispatcher will contact you shortly by text. Goodbye.</Say><Hangup/>`);
+    }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // STEP 1: Location type selected
-  // ══════════════════════════════════════════════════════════════
-  if (step === 1 && digits) {
-    const locs: Record<string, string> = { "1": "highway", "2": "city_street", "3": "parking_lot" };
-    await supabase.from("voice_call_sessions").update({ ivr_step: 2, location_type: locs[digits] || "unknown" }).eq("call_sid", callSid);
-
-    if (isFr) return resp(menuLang("Votre véhicule peut-il rouler? 1 pour oui. 2 pour non.", "fr-CA"));
-    if (isCn) return resp(menuLang("你架車可唔可以行？按1可以。按2唔可以。", "cmn-CN", "Polly.Zhiyu"));
-    return resp(menu("Can your vehicle roll? Press 1 for yes. 2 for no."));
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // STEP 2: Can roll → create job
-  // ══════════════════════════════════════════════════════════════
-  if (step === 2 && digits) {
-    const canRoll = digits === "1";
-
+  // ═══════════════════════════════════════════════════════════
+  // STEP 1: Follow-up response
+  // ═══════════════════════════════════════════════════════════
+  if (step === 1 && speech) {
+    console.log(`[VOICE] Follow-up: "${speech}"`);
     const { data: fullSess } = await supabase.from("voice_call_sessions").select("*").eq("call_sid", callSid).single();
-    await supabase.from("voice_call_sessions").update({ ivr_step: 3, can_vehicle_roll: canRoll, completed_at: new Date().toISOString() }).eq("call_sid", callSid);
+    const combined = `${fullSess?.incident_description || ""}. ${speech}`;
 
     try {
+      const llmResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001", max_tokens: 300,
+          system: `Extract from caller speech. JSON only: {"name":null,"location":null,"incident":null,"vehicle_make":null,"vehicle_model":null,"vehicle_year":null,"can_roll":null}`,
+          messages: [{ role: "user", content: combined }],
+        }),
+      });
+      const data = await llmResp.json();
+      const cleanJson = (data.content?.[0]?.text || "{}").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const ext = JSON.parse(cleanJson);
+
+      const incMap: Record<string, string> = {
+        "tow": "1d8d7d3b-c58b-4b2b-944e-b1c00ca8969f", "battery": "a4cdb184-d275-41a0-a2dc-cf17fe4ba5c9",
+        "flat tire": "34c06174-258e-4bed-978f-cad26ee6c789", "lockout": "a53fc74d-2c2c-40dd-ad2f-8141137dda51",
+        "fuel": "f2c9fc2d-d3a4-4aac-a607-9568de922a1d", "other": "252293cb-7340-4b47-8cf6-b2a7813f4309",
+      };
+      const incidentId = ext.incident ? incMap[ext.incident.toLowerCase()] || fullSess?.incident_type_id : fullSess?.incident_type_id;
+
       const jobResp = await fetch(`${SUPABASE_URL}/functions/v1/intake-create-job`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: from || fullSess?.caller_phone,
-          incidentTypeId: fullSess?.incident_type_id,
-          pickupLocation: `Caller on ${(fullSess?.location_type || "").replace("_", " ")} — exact address pending`,
-          canVehicleRoll: canRoll,
-          locationType: fullSess?.location_type,
+          name: ext.name, phone: from || fullSess?.caller_phone,
+          incidentTypeId: incidentId,
+          pickupLocation: ext.location || fullSess?.location_text || "Location pending",
+          vehicleMake: ext.vehicle_make, vehicleModel: ext.vehicle_model,
+          vehicleYear: ext.vehicle_year, canVehicleRoll: ext.can_roll,
         }),
       });
-      const result = await jobResp.json();
-      console.log(`[VOICE-IVR] Job: ${JSON.stringify(result)}`);
+      const jobResult = await jobResp.json();
+      console.log(`[VOICE] Job: ${JSON.stringify(jobResult)}`);
+      await supabase.from("voice_call_sessions").update({ ivr_step: 99, completed_at: new Date().toISOString() }).eq("call_sid", callSid);
 
-      if (result.success) {
-        if (isFr) return resp(say("Merci! Votre demande a été soumise. Un chauffeur sera assigné sous peu. Soyez prudent!", "fr-CA") + "<Hangup/>");
-        if (isCn) return resp(say("多謝！你嘅請求已經提交。我哋會盡快安排司機。保重！", "cmn-CN", "Polly.Zhiyu") + "<Hangup/>");
-        return resp(say("Thank you! Your request has been submitted. A driver will be assigned shortly. Stay safe!") + "<Hangup/>");
-      }
+      return xml(`<Say voice="${V}">Thank you! Your request has been submitted. A driver will be assigned and you'll get a text message. Stay safe!</Say><Hangup/>`);
     } catch (err) {
-      console.error("[VOICE-IVR] Error:", err);
+      console.error("[VOICE] Follow-up error:", err);
     }
 
-    if (isFr) return resp(say("Merci. Un répartiteur vous contactera sous peu. Au revoir.", "fr-CA") + "<Hangup/>");
-    if (isCn) return resp(say("多謝你嘅來電。調度員會盡快聯繫你。再見。", "cmn-CN", "Polly.Zhiyu") + "<Hangup/>");
-    return resp(say("Thank you. A dispatcher will contact you shortly. Goodbye.") + "<Hangup/>");
+    return xml(`<Say voice="${V}">Thank you. A dispatcher will text you shortly. Goodbye.</Say><Hangup/>`);
   }
 
-  return resp(say("Goodbye.") + "<Hangup/>");
+  return xml(`<Say voice="${V}">Goodbye.</Say><Hangup/>`);
 });
