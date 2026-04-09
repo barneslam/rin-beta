@@ -40,8 +40,15 @@ serve(async (req) => {
       offers_expired: 0,
       jobs_moved_to_reassignment: 0,
       jobs_with_exceptions: 0,
+      jobs_auto_cancelled: 0,
       exception_breakdown: {} as Record<string, number>,
     };
+
+    // Load business rules for timeouts
+    const { data: maxAttemptsRule } = await supabase.rpc("get_rule", { p_key: "dispatch.max_attempts" });
+    const { data: confirmTimeoutRule } = await supabase.rpc("get_rule", { p_key: "workflow.customer_confirmation_timeout" });
+    const { data: priceTimeoutRule } = await supabase.rpc("get_rule", { p_key: "workflow.price_approval_timeout" });
+    const { data: paymentTimeoutRule } = await supabase.rpc("get_rule", { p_key: "workflow.payment_timeout" });
 
     // ------------------------------------------------------------------
     // 1. Expire stale pending dispatch_offers
@@ -90,7 +97,7 @@ serve(async (req) => {
     //    → re-queue for retry (up to MAX_DISPATCH_RETRIES), then reassignment_required
     //    Customer is notified via SMS at each stage.
     // ------------------------------------------------------------------
-    const MAX_DISPATCH_RETRIES = 3;
+    const MAX_DISPATCH_RETRIES = (maxAttemptsRule?.value as number) ?? 3;
 
     const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
     const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
@@ -236,7 +243,72 @@ serve(async (req) => {
     }
 
     // ------------------------------------------------------------------
-    // 3. Count jobs currently in exception states (observability only)
+    // 3. Enforce workflow timeouts from business_rules
+    // ------------------------------------------------------------------
+    const timeoutChecks = [
+      {
+        status: "pending_customer_confirmation",
+        timeoutSeconds: (confirmTimeoutRule?.value as number) ?? 300,
+        action: "cancel",
+        reason: "Customer did not confirm within timeout",
+      },
+      {
+        status: "pending_customer_price_approval",
+        timeoutSeconds: (priceTimeoutRule?.value as number) ?? 180,
+        action: "cancel",
+        reason: "Customer did not approve price within timeout",
+      },
+      {
+        status: "payment_authorization_required",
+        timeoutSeconds: (paymentTimeoutRule?.value as number) ?? 420,
+        action: "cancel",
+        reason: "Payment not completed within timeout",
+      },
+    ];
+
+    for (const check of timeoutChecks) {
+      const cutoff = new Date(Date.now() - check.timeoutSeconds * 1000).toISOString();
+      const { data: timedOutJobs } = await supabase
+        .from("jobs")
+        .select("job_id, user_id, updated_at")
+        .eq("job_status", check.status)
+        .lt("updated_at", cutoff);
+
+      if (timedOutJobs && timedOutJobs.length > 0) {
+        for (const timedOut of timedOutJobs) {
+          console.log(`[WATCHDOG] Timeout: job ${timedOut.job_id} in ${check.status} for >${check.timeoutSeconds}s — action: ${check.action}`);
+
+          if (check.action === "cancel") {
+            await supabase.from("jobs").update({
+              job_status: "cancelled_by_customer",
+              cancelled_reason: check.reason,
+              cancelled_by: "system_watchdog",
+            }).eq("job_id", timedOut.job_id);
+
+            await supabase.from("job_events").insert({
+              job_id: timedOut.job_id,
+              event_type: "auto_cancelled",
+              event_category: "lifecycle",
+              message: `Watchdog: ${check.reason} (timeout: ${check.timeoutSeconds}s)`,
+              new_value: { auto_action: check.action, timeout_seconds: check.timeoutSeconds },
+            });
+
+            // Notify customer if possible
+            if (timedOut.user_id) {
+              const { data: user } = await supabase.from("users").select("phone").eq("user_id", timedOut.user_id).single();
+              if (user?.phone) {
+                await sendCustomerSms(user.phone, `RIN: Your roadside request has been cancelled due to inactivity. Please submit a new request if you still need assistance.`);
+              }
+            }
+
+            summary.jobs_auto_cancelled++;
+          }
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Count jobs currently in exception states (observability only)
     // ------------------------------------------------------------------
     const { data: exceptionJobs, error: exScanErr } = await supabase
       .from("jobs")

@@ -50,6 +50,10 @@ serve(async (req) => {
 
     console.log(`[COMPLETE-JOB] Starting — jobId=${jobId} driverId=${driverId ?? "n/a"} confirmed=${!!confirmed}`);
 
+    // Read business rules
+    const { data: autoChargeRule } = await supabase.rpc("get_rule", { p_key: "pricing.auto_charge_on_complete" });
+    const autoChargeEnabled = autoChargeRule?.enabled !== false; // default true
+
     // Fetch job
     const { data: job, error: jobErr } = await supabase
       .from("jobs")
