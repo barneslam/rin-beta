@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
-import { supabase, SUPABASE_URL } from "../lib/supabase";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "../lib/supabase";
 import type { Job } from "../types/job";
 
 interface Props {
@@ -22,7 +22,10 @@ export default function CompletionScreen({ job, onCompleted }: Props) {
       // Call complete-job Phase 2 via edge function (same as SMS CONFIRM path)
       const response = await fetch(`${SUPABASE_URL}/functions/v1/complete-job`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
         body: JSON.stringify({ jobId: job.job_id, confirmed: true }),
       });
 

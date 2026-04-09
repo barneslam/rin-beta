@@ -44,13 +44,27 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  // TEST MODE: Auto-load latest active job
+  // Auto-load latest active job for the test customer phone
   useEffect(() => {
-    if (!jobId) {
-      // Hard-code the test job ID to bypass RLS
-      // In production, auth tokens will grant access
-      setJobId("982ed687-e7ed-42c0-bacb-a95c5b663dba");
-    }
+    if (jobId) return;
+    const findActiveJob = async () => {
+      const { data } = await supabase
+        .from("jobs")
+        .select("job_id")
+        .eq("customer_phone", "+16472847417")
+        .neq("job_status", "job_completed")
+        .neq("job_status", "cancelled_by_customer")
+        .neq("job_status", "driver_cancelled_at_scene")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (data && data.length > 0) {
+        setJobId(data[0].job_id);
+      }
+    };
+    findActiveJob();
+    // Poll every 5s in case a new job is created
+    const poll = setInterval(findActiveJob, 5000);
+    return () => clearInterval(poll);
   }, [jobId]);
 
   // In production this would use phone-based auth + useCustomerJobs

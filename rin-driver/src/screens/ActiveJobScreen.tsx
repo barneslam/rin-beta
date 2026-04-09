@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, TextInput } from "react-native";
-import { supabase, SUPABASE_URL } from "../lib/supabase";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "../lib/supabase";
 import { INCIDENT_NAMES } from "../types/driver";
 import type { JobForDriver } from "../types/driver";
 
@@ -66,7 +66,7 @@ export default function ActiveJobScreen({ job, driverId, onUpdate }: Props) {
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/complete-job`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
         body: JSON.stringify({ jobId: job.job_id, driverId, confirmed: false }),
       });
       const result = await resp.json();
@@ -96,7 +96,7 @@ export default function ActiveJobScreen({ job, driverId, onUpdate }: Props) {
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/driver-adjust-amount`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
         body: JSON.stringify({ jobId: job.job_id, driverId, newAmount: amount }),
       });
       const result = await resp.json();
@@ -123,7 +123,7 @@ export default function ActiveJobScreen({ job, driverId, onUpdate }: Props) {
             try {
               const resp = await fetch(`${SUPABASE_URL}/functions/v1/driver-cancel-at-scene`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
                 body: JSON.stringify({ jobId: job.job_id, driverId, reason: "Driver unable to complete (reported via app)" }),
               });
               const result = await resp.json();
