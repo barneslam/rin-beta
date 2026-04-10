@@ -27,7 +27,6 @@ import JobTracking from "./pages/JobTracking";
 import DispatchControlPanel from "./pages/DispatchControlPanel";
 import DispatchDiagnostics from "./pages/DispatchDiagnostics";
 import DriverOfferPublic from "./pages/DriverOfferPublic";
-import PriceQuote from "./pages/PriceQuote";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -53,7 +52,6 @@ const App = () => (
           <Route path="/pay/:jobId" element={<CustomerPayment />} />
           <Route path="/confirm/:jobId" element={<CustomerJobConfirm />} />
           <Route path="/driver/offer/:offerId" element={<DriverOfferPublic />} />
-          <Route path="/quote" element={<PriceQuote />} />
 
           {/* Dispatcher routes — with sidebar */}
           <Route path="/intake" element={<DispatcherLayout><IncidentIntake /></DispatcherLayout>} />
